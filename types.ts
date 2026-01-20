@@ -3,6 +3,7 @@ export interface User {
   username: string;
   displayName: string;
   avatar: string;
+  profileImagePath?: string; // Added field from API
   bio: string;
   friends: string[]; // List of friend IDs
 }

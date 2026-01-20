@@ -1,7 +1,8 @@
 import React from 'react';
-import { Search, Plus, Bell, MessageCircle, Menu } from 'lucide-react';
+import { Search, Plus, Bell, MessageCircle, Menu, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { User } from '../types';
+import { logout } from '../services/dataService';
 
 interface NavbarProps {
   currentUser: User;
@@ -9,6 +10,10 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ currentUser, onToggleSidebar }) => {
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 h-14 flex items-center px-4 justify-between">
       {/* Logo & Mobile Menu */}
@@ -55,15 +60,25 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onToggleSidebar }) => {
         </div>
 
         {/* Profile Dropdown Trigger (Simplified) */}
-        <Link to={`/user/${currentUser.id}`} className="flex items-center space-x-2 p-1 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 ml-2">
-            <div className="relative">
-                <img src={currentUser.avatar} alt="Profile" className="w-8 h-8 rounded-md bg-gray-200 object-cover" />
-                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
-            </div>
-            <div className="hidden lg:block text-left text-xs">
-                <p className="font-bold text-gray-700 truncate w-24">{currentUser.displayName}</p>
-            </div>
-        </Link>
+        <div className="flex items-center">
+            <Link to={`/user/${currentUser.id}`} className="flex items-center space-x-2 p-1 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 ml-2">
+                <div className="relative">
+                    <img src={currentUser.avatar} alt="Profile" className="w-8 h-8 rounded-md bg-gray-200 object-cover" />
+                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full"></div>
+                </div>
+                <div className="hidden lg:block text-left text-xs">
+                    <p className="font-bold text-gray-700 truncate w-24">{currentUser.displayName}</p>
+                </div>
+            </Link>
+            
+            <button 
+                onClick={handleLogout}
+                className="ml-2 p-2 text-gray-500 hover:bg-gray-100 rounded-full hover:text-red-600 transition-colors"
+                title="Log Out"
+            >
+                <LogOut size={20} />
+            </button>
+        </div>
       </div>
     </nav>
   );
