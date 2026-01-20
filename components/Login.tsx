@@ -21,7 +21,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     try {
       await login({ username, password });
       onLoginSuccess();
-      navigate('/');
+      // specific fix: Allow state to update before navigating
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
     } catch (err) {
       setError('Invalid credentials or login failed.');
       console.error(err);

@@ -9,19 +9,17 @@ interface CreatePostWidgetProps {
 
 const CreatePostWidget: React.FC<CreatePostWidgetProps> = ({ onPostCreated, currentUserAvatar }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
+    if (!content.trim()) return;
 
     setLoading(true);
     try {
-      const newPost = await createPost({ title, content });
+      const newPost = await createPost(content);
       onPostCreated(newPost);
-      setTitle('');
       setContent('');
       setIsExpanded(false);
     } catch (error) {
@@ -53,23 +51,13 @@ const CreatePostWidget: React.FC<CreatePostWidgetProps> = ({ onPostCreated, curr
       ) : (
         <form onSubmit={handleSubmit} className="p-2">
           <div className="mb-2">
-            <input
-              type="text"
-              placeholder="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-              required
-              autoFocus
-            />
-          </div>
-          <div className="mb-2">
             <textarea
-              placeholder="Text (optional)"
+              placeholder="What's on your mind?"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               className="w-full border border-gray-300 rounded px-3 py-2 h-24 focus:outline-none focus:border-blue-500 resize-none"
               required
+              autoFocus
             />
           </div>
           <div className="flex justify-end space-x-2">

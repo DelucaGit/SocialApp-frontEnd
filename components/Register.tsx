@@ -36,7 +36,9 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess }) => {
         profileImagePath: profileImagePath || undefined
       });
       onRegisterSuccess();
-      navigate('/');
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
       console.error(err);

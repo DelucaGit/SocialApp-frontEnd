@@ -30,7 +30,13 @@ const Feed: React.FC<FeedProps> = ({ currentUser }) => {
       }
 
       setUsersCache(prev => ({ ...prev, ...newAuthors }));
-      setPosts(prev => [...prev, ...newPosts]);
+      
+      setPosts(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const uniqueNewPosts = newPosts.filter(p => !existingIds.has(p.id));
+        return [...prev, ...uniqueNewPosts];
+      });
+      
     } catch (error) {
       console.error("Failed to load posts", error);
     } finally {
