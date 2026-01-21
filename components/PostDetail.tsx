@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Post, Comment, User } from '../types';
-import { getPost, getComments, getUser } from '../services/dataService';
+import { getPost, getComments, getUser, createComment } from '../services/dataService';
 import PostCard from './PostCard';
 import CommentNode from './CommentNode';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -13,6 +13,8 @@ const PostDetail: React.FC = () => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [usersCache, setUsersCache] = useState<Record<string, User>>({});
   const [loading, setLoading] = useState(true);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -42,13 +44,47 @@ const PostDetail: React.FC = () => {
       }));
 
       setUsersCache(newUsersCache);
-      setPost(postData || null);
+      if (postData) {
+        setPost({ ...postData, commentCount: commentsData.length });
+      } else {
+        setPost(null);
+      }
       setComments(commentsData);
       setLoading(false);
     };
 
     fetchData();
   }, [postId]);
+
+  const handleCommentSubmit = async () => {
+    if (!postId || !commentText.trim()) return;
+    
+    setSubmitting(true);
+    try {
+      const newComment = await createComment(postId, commentText);
+      
+      // Add the new comment to the top of the list
+      setComments(prev => [newComment, ...prev]);
+      setCommentText('');
+      
+      // Update the post's comment count locally so it looks correct immediately
+      if (post) {
+        setPost({ ...post, commentCount: (post.commentCount || 0) + 1 });
+      }
+
+      // If we don't have this user in cache (e.g. first time commenting), fetch them
+      if (!usersCache[newComment.authorId]) {
+        const author = await getUser(newComment.authorId);
+        if (author) {
+          setUsersCache(prev => ({ ...prev, [author.id]: author }));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to post comment", error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) return (
       <div className="flex justify-center items-center h-64">
@@ -80,12 +116,18 @@ const PostDetail: React.FC = () => {
       <div className="bg-white border border-gray-300 rounded-md p-4 mb-6">
           <p className="text-sm text-gray-500 mb-1">Comment as <span className="text-blue-600 font-bold">You</span></p>
           <textarea 
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            disabled={submitting}
             className="w-full border border-gray-200 rounded p-2 text-sm focus:outline-none focus:border-blue-500 min-h-[100px]"
             placeholder="What are your thoughts?"
           ></textarea>
           <div className="flex justify-end mt-2">
-              <button className="bg-blue-600 text-white px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
-                  Comment
+              <button 
+                onClick={handleCommentSubmit}
+                disabled={submitting || !commentText.trim()}
+                className="bg-blue-600 text-white px-4 py-1.5 rounded-full text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                  {submitting ? 'Posting...' : 'Comment'}
               </button>
           </div>
       </div>

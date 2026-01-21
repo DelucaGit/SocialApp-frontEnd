@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Post, User } from '../types';
 import PostCard from './PostCard';
 import CreatePostWidget from './CreatePostWidget';
-import { getPosts, getUser } from '../services/dataService';
+import { getPosts, getUser, getComments } from '../services/dataService';
 import { Loader2 } from 'lucide-react';
 
 interface FeedProps {
@@ -20,20 +20,30 @@ const Feed: React.FC<FeedProps> = ({ currentUser }) => {
     try {
       const newPosts = await getPosts(page, 5);
       
-      // Fetch authors for these posts
+      // Fetch authors and comment counts for these posts
       const newAuthors: Record<string, User> = {};
-      for (const post of newPosts) {
+      
+      const processedPosts = await Promise.all(newPosts.map(async (post) => {
+          // Fetch Author
           if (!usersCache[post.authorId] && !newAuthors[post.authorId]) {
               const user = await getUser(post.authorId);
               if (user) newAuthors[user.id] = user;
           }
-      }
+
+          // Fetch accurate comment count
+          try {
+              const comments = await getComments(post.id);
+              return { ...post, commentCount: comments.length };
+          } catch (e) {
+              return post;
+          }
+      }));
 
       setUsersCache(prev => ({ ...prev, ...newAuthors }));
       
       setPosts(prev => {
         const existingIds = new Set(prev.map(p => p.id));
-        const uniqueNewPosts = newPosts.filter(p => !existingIds.has(p.id));
+        const uniqueNewPosts = processedPosts.filter(p => !existingIds.has(p.id));
         return [...prev, ...uniqueNewPosts];
       });
       

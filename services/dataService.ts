@@ -27,12 +27,33 @@ const mapUser = (user: any): User => {
 
 // Helper to map API post to App post
 const mapPost = (post: any): Post => {
+  const rawDate = post.timestamp || post.createdAt || new Date().toISOString();
+  const formattedDate = new Date(rawDate).toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
   return {
     ...post,
-    id: String(post.id),
+    id: String(post.postId || post.id),
     authorId: post.userId ? String(post.userId) : (post.authorId ? String(post.authorId) : ''),
     content: post.text || post.content, // Map 'text' from backend to 'content'
-    timestamp: post.timestamp || post.createdAt || new Date().toISOString()
+    timestamp: formattedDate,
+    commentCount: (post.comments && Array.isArray(post.comments)) ? post.comments.length : (post.commentCount || 0)
+  };
+};
+
+const mapComment = (comment: any): Comment => {
+  return {
+    id: String(comment.commentId || comment.id),
+    postId: String(comment.postId),
+    authorId: String(comment.userId || comment.authorId),
+    authorName: comment.username || comment.authorName || 'Unknown',
+    content: comment.text || comment.content,
+    timestamp: comment.createdAt || comment.timestamp || new Date().toISOString()
   };
 };
 
@@ -80,7 +101,7 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
             localStorage.setItem('token', newAccessToken);
             
             // Update the header with the new token and retry the original request
-            (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
+            if (config.headers) (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
             response = await fetch(`${API_BASE_URL}${endpoint}`, config);
           }
         } else {
@@ -260,7 +281,7 @@ export const getPosts = async (page: number, limit: number): Promise<Post[]> => 
   const response = await apiRequest<any>(`/posts?page=${apiPage}&size=${limit}`);
 
   // Handle Spring Boot Page<T> response which wraps items in 'content'
-  let rawPosts = [];
+  let rawPosts: any[] = [];
   if (response.content && Array.isArray(response.content)) {
     rawPosts = response.content;
   } else if (Array.isArray(response)) {
@@ -284,7 +305,31 @@ export const getComments = async (postId: string): Promise<Comment[]> => {
         await delay(300);
         return MOCK_COMMENTS.filter(c => c.postId === postId);
     }
-    return apiRequest<Comment[]>(`/posts/${postId}/comments`);
+    const response = await apiRequest<any[]>(`/posts/${postId}/comments`);
+    return response.map(mapComment);
+};
+
+export const createComment = async (postId: string, content: string): Promise<Comment> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const newComment: Comment = {
+      id: `comment-${Date.now()}`,
+      postId,
+      authorId: 'curr',
+      authorName: 'You',
+      content,
+      timestamp: new Date().toISOString()
+    };
+    MOCK_COMMENTS.push(newComment);
+    return newComment;
+  }
+
+  const response = await apiRequest<any>(`/posts/${postId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ text: content }),
+  });
+
+  return mapComment(response);
 };
 
 export const getUser = async (userId: string): Promise<User | null> => {
@@ -311,7 +356,7 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
   // Assuming this endpoint might also return a Page or List
   const response = await apiRequest<any>(`/users/${userId}/posts`);
   
-  let rawPosts = [];
+  let rawPosts: any[] = [];
   if (response.content && Array.isArray(response.content)) {
     rawPosts = response.content;
   } else if (Array.isArray(response)) {
@@ -320,6 +365,7 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
   return rawPosts.map(mapPost);
 };
 
+// @ts-ignore
 export const toggleFriend = async (currentUserId: string, targetUserId: string): Promise<boolean> => {
     if (USE_MOCK_DATA) {
         await delay(200);
