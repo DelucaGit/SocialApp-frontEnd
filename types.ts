@@ -11,7 +11,6 @@ export interface User {
 export interface Post {
   id: string;
   authorId: string;
-  title: string;
   content: string;
   commentCount: number;
   timestamp: string;

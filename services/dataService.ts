@@ -39,7 +39,7 @@ const mapPost = (post: any): Post => {
 // Helper for making API requests
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('token');
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
@@ -47,14 +47,52 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...headers,
+      ...options?.headers,
+    },
+    // IMPORTANT: This allows the browser to send/receive httpOnly cookies (refreshToken) for ALL requests
+    credentials: 'include',
+  };
+
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        ...headers,
-        ...options?.headers,
-      },
-      ...options,
-    });
+    let response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    
+    // Handle 401 Unauthorized (Token Expired)
+    // We skip this logic for login/logout/refresh endpoints to avoid infinite loops
+    if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/logout')) {
+      try {
+        // Attempt to refresh the token
+        const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include' // Send the refreshToken cookie
+        });
+
+        if (refreshResponse.ok) {
+          const data = await refreshResponse.json();
+          // Backend RefreshTokenResponse only returns accessToken
+          const newAccessToken = data.accessToken;
+          
+          if (newAccessToken) {
+            localStorage.setItem('token', newAccessToken);
+            
+            // Update the header with the new token and retry the original request
+            (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
+            response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+          }
+        } else {
+          // Refresh failed (token invalid or expired), force logout
+          throw new Error('Session expired');
+        }
+      } catch (refreshError) {
+        // If refresh fails, we must log out to clear state
+        await logout(); 
+        throw new Error('Session expired. Please login again.');
+      }
+    }
     
     if (!response.ok) {
       const errorBody = await response.text();
@@ -72,7 +110,8 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
 
 // Auth Services
 export const login = async (credentials: any): Promise<{ token: string, user: User | null }> => {
-  const response = await apiRequest<{ accessToken: string, refreshToken: string, userId: number }>('/auth/login', {
+  // Backend LoginResponseDTO returns { accessToken, userId, role, username }
+  const response = await apiRequest<{ accessToken: string, userId: number, role: string, username: string }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(credentials),
   });
@@ -81,9 +120,6 @@ export const login = async (credentials: any): Promise<{ token: string, user: Us
   
   if (token) {
     localStorage.setItem('token', token);
-    if (response.refreshToken) {
-      localStorage.setItem('refreshToken', response.refreshToken);
-    }
 
     // Fetch user details using userId from login response
     if (response.userId) {
@@ -103,14 +139,14 @@ export const login = async (credentials: any): Promise<{ token: string, user: Us
 };
 
 export const register = async (userData: any): Promise<{ token: string, user: User | null }> => {
-  const response = await apiRequest<{ accessToken: string, refreshToken: string, userId?: number | string }>('/auth/register', {
+  // Register returns LoginResponseDTO (same as login)
+  const response = await apiRequest<{ accessToken: string, userId: number, role: string, username: string }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(userData),
   });
   
   if (response.accessToken) {
     localStorage.setItem('token', response.accessToken);
-    localStorage.setItem('refreshToken', response.refreshToken);
     
     // Fetch user details using userId if available
     if (response.userId) {
@@ -131,12 +167,12 @@ export const register = async (userData: any): Promise<{ token: string, user: Us
 
 export const logout = async () => {
   try {
+    // This call now includes credentials, so backend can delete the cookie
     await apiRequest('/auth/logout', { method: 'POST' });
   } catch (e) {
     console.error("Logout API call failed", e);
   } finally {
     localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     window.location.href = '/';
   }
