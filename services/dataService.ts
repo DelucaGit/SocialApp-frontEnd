@@ -4,10 +4,12 @@ import { Post, User, Comment } from '../types';
 // Configuration for API
 const USE_LOCAL_API = true; // Set to true to use your local Java backend
 const REMOTE_API_URL = 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
-const LOCAL_API_URL = ''; // Empty string uses the proxy in vite.config.ts
+const LOCAL_API_URL = 'http://localhost:8080'; // Direct URL to backend to avoid proxy issues
 
 const API_BASE_URL = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
 const USE_MOCK_DATA = false; 
+
+console.log("Using API Base URL:", API_BASE_URL);
 
 // Simulate API delay for mocks
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -418,15 +420,116 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
   }
 };
 
-// @ts-ignore
-export const toggleFriend = async (currentUserId: string, targetUserId: string): Promise<boolean> => {
+export const getFriends = async (userId: string): Promise<User[]> => {
+  if (USE_MOCK_DATA) {
+    await delay(200);
+    return [];
+  }
+  try {
+    // Assuming endpoint /users/{userId}/friends exists
+    const response = await apiRequest<any[]>(`/users/${userId}/friends`);
+    if (!Array.isArray(response)) return [];
+    return response.map(mapUser);
+  } catch (e) {
+    console.warn(`Failed to fetch friends for user ${userId}`, e);
+    return [];
+  }
+};
+
+export const sendFriendRequest = async (receiverId: string): Promise<void> => {
     if (USE_MOCK_DATA) {
         await delay(200);
-        return true;
+        return;
     }
-    await apiRequest(`/users/${currentUserId}/friends`, {
-        method: 'POST',
-        body: JSON.stringify({ targetUserId })
+    // The backend controller extracts senderId from the JWT token.
+    // We only need to pass the receiverId in the URL path.
+    await apiRequest(`/friendships/${receiverId}`, {
+        method: 'POST'
     });
-    return true;
+};
+
+export const acceptFriendRequest = async (friendshipId: string): Promise<void> => {
+    if (USE_MOCK_DATA) {
+        await delay(200);
+        return;
+    }
+    // Matches Backend: PUT /friendships/{friendshipId}/accept
+    await apiRequest(`/friendships/${friendshipId}/accept`, {
+        method: 'PUT'
+    });
+};
+
+export const rejectFriendRequest = async (friendshipId: string): Promise<void> => {
+    if (USE_MOCK_DATA) {
+        await delay(200);
+        return;
+    }
+    // Matches Backend: PUT /friendships/{friendshipId}/reject
+    await apiRequest(`/friendships/${friendshipId}/reject`, {
+        method: 'PUT'
+    });
+};
+
+export const deleteFriendship = async (friendshipId: string): Promise<void> => {
+    if (USE_MOCK_DATA) {
+        await delay(200);
+        return;
+    }
+    // Matches Backend: DELETE /friendships/{friendshipId}
+    await apiRequest(`/friendships/${friendshipId}`, {
+        method: 'DELETE'
+    });
+};
+
+export interface FriendRequest {
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderAvatar: string;
+    status: string;
+}
+
+export const getFriendRequests = async (): Promise<FriendRequest[]> => {
+    if (USE_MOCK_DATA) {
+        await delay(200);
+        return [];
+    }
+    try {
+        const response = await apiRequest<any[]>('/my/friend-request');
+        console.log("Friend Requests Response:", response); // Debugging
+        if (!Array.isArray(response)) return [];
+        
+        // Fetch user details for each request to get username and avatar
+        const requests = await Promise.all(response.map(async (req) => {
+            const senderId = String(req.senderId || req.userId);
+            let senderName = req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
+            let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
+
+            // If name is Unknown or we just want to be sure, fetch the user details
+            if (senderId) {
+                try {
+                    const user = await getUser(senderId);
+                    if (user) {
+                        senderName = user.username;
+                        senderAvatar = user.avatar;
+                    }
+                } catch (e) {
+                    console.warn(`Could not fetch details for sender ${senderId}`, e);
+                }
+            }
+
+            return {
+                id: String(req.friendshipId || req.id),
+                senderId: senderId,
+                senderName: senderName,
+                senderAvatar: senderAvatar,
+                status: req.status || 'PENDING'
+            };
+        }));
+        
+        return requests;
+    } catch (e) {
+        console.warn("Failed to fetch friend requests", e);
+        return [];
+    }
 };

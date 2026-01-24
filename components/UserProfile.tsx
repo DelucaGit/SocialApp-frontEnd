@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, toggleFriend } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check } from 'lucide-react';
 
@@ -16,6 +16,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFriend, setIsFriend] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
 
   useEffect(() => {
@@ -24,21 +25,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       setLoading(true);
       const userData = await getUser(userId);
       const userPosts = await getUserPosts(userId);
+      const userFriends = await getFriends(userId);
       
       setUser(userData);
       setPosts(userPosts);
-      
-      // Fetch friend details
-      if (userData && userData.friends && userData.friends.length > 0) {
-          const friendPromises = userData.friends.map(fid => getUser(fid));
-          const friendsData = await Promise.all(friendPromises);
-          setFriends(friendsData.filter((f): f is User => f !== null));
-      } else {
-          setFriends([]);
-      }
+      setFriends(userFriends);
       
       // Check if friend
-      if (userData && currentUser && currentUser.friends && currentUser.friends.includes(userData.id)) {
+      if (currentUser && userFriends.some(f => f.id === currentUser.id)) {
         setIsFriend(true);
       } else {
           setIsFriend(false);
@@ -52,9 +46,20 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
 
   const handleFriendToggle = async () => {
       if (!user || !currentUser) return;
-      const success = await toggleFriend(currentUser.id, user.id);
-      if (success) {
-          setIsFriend(!isFriend);
+      
+      if (isFriend) {
+          // Logic to remove friend would go here
+          alert("Removing friends is not yet implemented in UI");
+          return;
+      }
+
+      try {
+          await sendFriendRequest(user.id);
+          setRequestSent(true);
+          alert("Friend request sent!");
+      } catch (error) {
+          console.error("Failed to send friend request", error);
+          alert("Failed to send friend request");
       }
   };
 
@@ -80,13 +85,22 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 {currentUser && currentUser.id !== user.id && (
                     <button 
                         onClick={handleFriendToggle}
-                        className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${isFriend ? 'border border-blue-600 text-blue-600 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                        disabled={requestSent}
+                        className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${
+                            isFriend 
+                            ? 'border border-blue-600 text-blue-600 hover:bg-blue-50' 
+                            : requestSent 
+                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                     >
                         {isFriend ? (
                             <>
                                 <Check size={16} />
                                 <span>Friends</span>
                             </>
+                        ) : requestSent ? (
+                            <span>Request Sent</span>
                         ) : (
                             <>
                                 <Plus size={16} />
