@@ -36,13 +36,23 @@ const mapPost = (post: any): Post => {
     minute: '2-digit',
   });
 
+  // Determine comment count with priority: explicit count > list length
+  let count = 0;
+  if (typeof post.commentCount === 'number') {
+      count = post.commentCount;
+  } else if (typeof post.commentsCount === 'number') {
+      count = post.commentsCount;
+  } else if (post.comments && Array.isArray(post.comments)) {
+      count = post.comments.length;
+  }
+
   return {
     ...post,
     id: String(post.postId || post.id),
     authorId: post.userId ? String(post.userId) : (post.authorId ? String(post.authorId) : ''),
     content: post.text || post.content, // Map 'text' from backend to 'content'
     timestamp: formattedDate,
-    commentCount: (post.comments && Array.isArray(post.comments)) ? post.comments.length : (post.commentCount || 0)
+    commentCount: count
   };
 };
 
@@ -374,10 +384,9 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
     return [...MOCK_POSTS, ...MOCK_POSTS].filter(p => p.authorId === userId);
   }
   
-  // The endpoint /users/{userId}/posts does not exist (404).
-  // We will try to fetch posts filtered by userId from the main /posts endpoint.
+  // Use the endpoint provided by the user: /posts/user/{userId}
   try {
-    const response = await apiRequest<any>(`/posts?userId=${userId}&size=20`);
+    const response = await apiRequest<any>(`/posts/user/${userId}`);
     
     let rawPosts: any[] = [];
     if (response.content && Array.isArray(response.content)) {
@@ -385,7 +394,24 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
     } else if (Array.isArray(response)) {
       rawPosts = response;
     }
-    return rawPosts.map(mapPost);
+    
+    const posts = rawPosts.map(mapPost);
+
+    // Fetch comments for each post to get the correct count
+    const postsWithCounts = await Promise.all(posts.map(async (post) => {
+      try {
+        const comments = await getComments(post.id);
+        return {
+          ...post,
+          commentCount: comments.length
+        };
+      } catch (err) {
+        console.warn(`Failed to fetch comments for post ${post.id}`, err);
+        return post;
+      }
+    }));
+
+    return postsWithCounts;
   } catch (e) {
     console.error(`Failed to fetch posts for user ${userId}`, e);
     return [];
