@@ -47,13 +47,22 @@ const mapPost = (post: any): Post => {
 };
 
 const mapComment = (comment: any): Comment => {
+  const rawDate = comment.createdAt || comment.timestamp || new Date().toISOString();
+  const formattedDate = new Date(rawDate).toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
   return {
     id: String(comment.commentId || comment.id),
     postId: String(comment.postId),
     authorId: String(comment.userId || comment.authorId),
     authorName: comment.username || comment.authorName || 'Unknown',
     content: comment.text || comment.content,
-    timestamp: comment.createdAt || comment.timestamp || new Date().toISOString()
+    timestamp: formattedDate
   };
 };
 
@@ -305,7 +314,18 @@ export const getComments = async (postId: string): Promise<Comment[]> => {
         await delay(300);
         return MOCK_COMMENTS.filter(c => c.postId === postId);
     }
-    const response = await apiRequest<any[]>(`/posts/${postId}/comments`);
+    const response = await apiRequest<any>(`/posts/${postId}/comments`);
+    
+    // Handle case where response is not an array (e.g. wrapped in an object or null)
+    if (!Array.isArray(response)) {
+        console.warn(`getComments expected array but got:`, response);
+        // If it's a Spring Page object, try to extract content
+        if (response && response.content && Array.isArray(response.content)) {
+            return response.content.map(mapComment);
+        }
+        return [];
+    }
+    
     return response.map(mapComment);
 };
 
@@ -353,16 +373,23 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
     await delay(300);
     return [...MOCK_POSTS, ...MOCK_POSTS].filter(p => p.authorId === userId);
   }
-  // Assuming this endpoint might also return a Page or List
-  const response = await apiRequest<any>(`/users/${userId}/posts`);
   
-  let rawPosts: any[] = [];
-  if (response.content && Array.isArray(response.content)) {
-    rawPosts = response.content;
-  } else if (Array.isArray(response)) {
-    rawPosts = response;
+  // The endpoint /users/{userId}/posts does not exist (404).
+  // We will try to fetch posts filtered by userId from the main /posts endpoint.
+  try {
+    const response = await apiRequest<any>(`/posts?userId=${userId}&size=20`);
+    
+    let rawPosts: any[] = [];
+    if (response.content && Array.isArray(response.content)) {
+      rawPosts = response.content;
+    } else if (Array.isArray(response)) {
+      rawPosts = response;
+    }
+    return rawPosts.map(mapPost);
+  } catch (e) {
+    console.error(`Failed to fetch posts for user ${userId}`, e);
+    return [];
   }
-  return rawPosts.map(mapPost);
 };
 
 // @ts-ignore

@@ -114,7 +114,7 @@ const AppContent: React.FC = () => {
       
       <Route path="/user/:userId" element={
         <ProtectedLayout currentUser={currentUser}>
-          <UserProfile />
+          <UserProfile currentUser={currentUser} />
         </ProtectedLayout>
       } />
       

@@ -4,9 +4,12 @@ import { User, Post } from '../types';
 import { getUser, getUserPosts, toggleFriend } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check } from 'lucide-react';
-import { MOCK_USERS } from '../constants'; // For current user reference
 
-const UserProfile: React.FC = () => {
+interface UserProfileProps {
+  currentUser: User | null;
+}
+
+const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const { userId } = useParams<{ userId: string }>();
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -14,10 +17,6 @@ const UserProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isFriend, setIsFriend] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
-  
-  // Hardcoded current user for demo purposes
-  // We use '!' to assert that 'curr' exists in our constants, preventing TS errors
-  const currentUser = MOCK_USERS['curr']!;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -30,7 +29,7 @@ const UserProfile: React.FC = () => {
       setPosts(userPosts);
       
       // Fetch friend details
-      if (userData && userData.friends.length > 0) {
+      if (userData && userData.friends && userData.friends.length > 0) {
           const friendPromises = userData.friends.map(fid => getUser(fid));
           const friendsData = await Promise.all(friendPromises);
           setFriends(friendsData.filter((f): f is User => f !== null));
@@ -38,8 +37,8 @@ const UserProfile: React.FC = () => {
           setFriends([]);
       }
       
-      // Check if friend (mock logic)
-      if (userData && currentUser.friends.includes(userData.id)) {
+      // Check if friend
+      if (userData && currentUser && currentUser.friends && currentUser.friends.includes(userData.id)) {
         setIsFriend(true);
       } else {
           setIsFriend(false);
@@ -49,10 +48,10 @@ const UserProfile: React.FC = () => {
     };
 
     fetchData();
-  }, [userId, currentUser.friends]);
+  }, [userId, currentUser]);
 
   const handleFriendToggle = async () => {
-      if (!user) return;
+      if (!user || !currentUser) return;
       const success = await toggleFriend(currentUser.id, user.id);
       if (success) {
           setIsFriend(!isFriend);
@@ -69,7 +68,7 @@ const UserProfile: React.FC = () => {
           <div className="md:w-1/3 lg:w-1/4 z-10 md:mr-6 mb-6 md:mb-0">
              <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                 <div className="relative mb-2 flex justify-center md:justify-start">
-                    <img src={user.avatar} alt={user.username} className="w-24 h-24 rounded-full border-4 border-white shadow-sm" />
+                    <img src={user.avatar} alt={user.username} className="w-24 h-24 rounded-full border-4 border-white shadow-sm object-cover" />
                 </div>
                 <h1 className="text-xl font-bold text-gray-900 text-center md:text-left">{user.displayName}</h1>
                 <p className="text-gray-500 text-sm mb-4 text-center md:text-left">u/{user.username}</p>
@@ -78,7 +77,7 @@ const UserProfile: React.FC = () => {
                     {user.bio}
                 </p>
 
-                {currentUser.id !== user.id && (
+                {currentUser && currentUser.id !== user.id && (
                     <button 
                         onClick={handleFriendToggle}
                         className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${isFriend ? 'border border-blue-600 text-blue-600 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
@@ -97,7 +96,7 @@ const UserProfile: React.FC = () => {
                     </button>
                 )}
                 
-                {currentUser.id === user.id && (
+                {currentUser && currentUser.id === user.id && (
                     <button className="w-full mt-2 py-2 px-4 rounded-full font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent">
                         Edit Profile
                     </button>
