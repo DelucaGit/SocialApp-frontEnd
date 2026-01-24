@@ -23,7 +23,8 @@ const mapUser = (user: any): User => {
     avatar: user.profileImagePath || user.avatar || `https://www.gravatar.com/avatar/${user.username}?d=identicon`,
     profileImagePath: user.profileImagePath,
     bio: user.bio || '',
-    friends: user.friends || []
+    friends: user.friends || [],
+    friendshipId: user.friendshipId ? String(user.friendshipId) : undefined
   };
 };
 
@@ -432,6 +433,21 @@ export const getFriends = async (userId: string): Promise<User[]> => {
     return response.map(mapUser);
   } catch (e) {
     console.warn(`Failed to fetch friends for user ${userId}`, e);
+    return [];
+  }
+};
+
+export const getMyFriends = async (): Promise<User[]> => {
+  if (USE_MOCK_DATA) {
+    await delay(200);
+    return [];
+  }
+  try {
+    const response = await apiRequest<any[]>('/my/friends');
+    if (!Array.isArray(response)) return [];
+    return response.map(mapUser);
+  } catch (e) {
+    console.warn("Failed to fetch my friends", e);
     return [];
   }
 };

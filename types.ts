@@ -6,11 +6,13 @@ export interface User {
   profileImagePath?: string; // Added field from API
   bio: string;
   friends: string[]; // List of friend IDs
+  friendshipId?: string; // ID of the friendship if applicable
 }
 
 export interface Post {
   id: string;
   authorId: string;
+  title: string;
   content: string;
   commentCount: number;
   timestamp: string;

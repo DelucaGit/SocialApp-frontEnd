@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, sendFriendRequest, getFriends } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getMyFriends } from '../services/dataService';
 import PostCard from './PostCard';
-import { Settings, Plus, Check } from 'lucide-react';
+import { Settings, Plus, Check, X } from 'lucide-react';
 
 interface UserProfileProps {
   currentUser: User | null;
@@ -16,6 +16,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFriend, setIsFriend] = useState(false);
+  const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [requestSent, setRequestSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
 
@@ -31,11 +32,23 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       setPosts(userPosts);
       setFriends(userFriends);
       
-      // Check if friend
-      if (currentUser && userFriends.some(f => f.id === currentUser.id)) {
-        setIsFriend(true);
-      } else {
-          setIsFriend(false);
+      // Check if friend and get friendship ID
+      if (currentUser) {
+          try {
+              // Fetch the current user's friends list which should contain the friendshipId
+              const myFriends = await getMyFriends();
+              const friendRecord = myFriends.find(f => f.id === userId);
+              
+              if (friendRecord) {
+                  setIsFriend(true);
+                  setFriendshipId(friendRecord.friendshipId || null);
+              } else {
+                  setIsFriend(false);
+                  setFriendshipId(null);
+              }
+          } catch (e) {
+              console.warn("Failed to check friendship status", e);
+          }
       }
       
       setLoading(false);
@@ -48,8 +61,23 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       if (!user || !currentUser) return;
       
       if (isFriend) {
-          // Logic to remove friend would go here
-          alert("Removing friends is not yet implemented in UI");
+          // Logic to remove friend
+          if (!friendshipId) {
+              alert("Cannot remove friend: Friendship ID not found.");
+              return;
+          }
+          
+          if (window.confirm(`Are you sure you want to remove ${user.displayName} from your friends?`)) {
+              try {
+                  await deleteFriendship(friendshipId);
+                  setIsFriend(false);
+                  setFriendshipId(null);
+                  alert("Friend removed.");
+              } catch (error) {
+                  console.error("Failed to remove friend", error);
+                  alert("Failed to remove friend.");
+              }
+          }
           return;
       }
 
@@ -88,7 +116,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                         disabled={requestSent}
                         className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${
                             isFriend 
-                            ? 'border border-blue-600 text-blue-600 hover:bg-blue-50' 
+                            ? 'border border-red-600 text-red-600 hover:bg-red-50' 
                             : requestSent 
                                 ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                                 : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -96,8 +124,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                     >
                         {isFriend ? (
                             <>
-                                <Check size={16} />
-                                <span>Friends</span>
+                                <X size={16} />
+                                <span>Remove Friend</span>
                             </>
                         ) : requestSent ? (
                             <span>Request Sent</span>
