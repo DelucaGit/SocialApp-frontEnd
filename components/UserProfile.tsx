@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, toggleFriend } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getMyFriends } from '../services/dataService';
 import PostCard from './PostCard';
-import { Settings, Plus, Check } from 'lucide-react';
+import { Settings, Plus, Check, X } from 'lucide-react';
+import EditProfileModal from './EditProfileModal';
 
 interface UserProfileProps {
   currentUser: User | null;
@@ -16,7 +17,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFriend, setIsFriend] = useState(false);
+  const [friendshipId, setFriendshipId] = useState<string | null>(null);
+  const [requestSent, setRequestSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,24 +28,29 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       setLoading(true);
       const userData = await getUser(userId);
       const userPosts = await getUserPosts(userId);
+      const userFriends = await getFriends(userId);
       
       setUser(userData);
       setPosts(userPosts);
+      setFriends(userFriends);
       
-      // Fetch friend details
-      if (userData && userData.friends && userData.friends.length > 0) {
-          const friendPromises = userData.friends.map(fid => getUser(fid));
-          const friendsData = await Promise.all(friendPromises);
-          setFriends(friendsData.filter((f): f is User => f !== null));
-      } else {
-          setFriends([]);
-      }
-      
-      // Check if friend
-      if (userData && currentUser && currentUser.friends && currentUser.friends.includes(userData.id)) {
-        setIsFriend(true);
-      } else {
-          setIsFriend(false);
+      // Check if friend and get friendship ID
+      if (currentUser) {
+          try {
+              // Fetch the current user's friends list which should contain the friendshipId
+              const myFriends = await getMyFriends();
+              const friendRecord = myFriends.find(f => f.id === userId);
+              
+              if (friendRecord) {
+                  setIsFriend(true);
+                  setFriendshipId(friendRecord.friendshipId || null);
+              } else {
+                  setIsFriend(false);
+                  setFriendshipId(null);
+              }
+          } catch (e) {
+              console.warn("Failed to check friendship status", e);
+          }
       }
       
       setLoading(false);
@@ -52,9 +61,35 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
 
   const handleFriendToggle = async () => {
       if (!user || !currentUser) return;
-      const success = await toggleFriend(currentUser.id, user.id);
-      if (success) {
-          setIsFriend(!isFriend);
+      
+      if (isFriend) {
+          // Logic to remove friend
+          if (!friendshipId) {
+              alert("Cannot remove friend: Friendship ID not found.");
+              return;
+          }
+          
+          if (window.confirm(`Are you sure you want to remove ${user.displayName} from your friends?`)) {
+              try {
+                  await deleteFriendship(friendshipId);
+                  setIsFriend(false);
+                  setFriendshipId(null);
+                  alert("Friend removed.");
+              } catch (error) {
+                  console.error("Failed to remove friend", error);
+                  alert("Failed to remove friend.");
+              }
+          }
+          return;
+      }
+
+      try {
+          await sendFriendRequest(user.id);
+          setRequestSent(true);
+          alert("Friend request sent!");
+      } catch (error) {
+          console.error("Failed to send friend request", error);
+          alert("Failed to send friend request");
       }
   };
 
@@ -80,13 +115,22 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 {currentUser && currentUser.id !== user.id && (
                     <button 
                         onClick={handleFriendToggle}
-                        className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${isFriend ? 'border border-blue-600 text-blue-600 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                        disabled={requestSent}
+                        className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${
+                            isFriend 
+                            ? 'border border-red-600 text-red-600 hover:bg-red-50' 
+                            : requestSent 
+                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                     >
                         {isFriend ? (
                             <>
-                                <Check size={16} />
-                                <span>Friends</span>
+                                <X size={16} />
+                                <span>Remove Friend</span>
                             </>
+                        ) : requestSent ? (
+                            <span>Request Sent</span>
                         ) : (
                             <>
                                 <Plus size={16} />
@@ -97,7 +141,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 )}
                 
                 {currentUser && currentUser.id === user.id && (
-                    <button className="w-full mt-2 py-2 px-4 rounded-full font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent">
+                    <button 
+                        onClick={() => setIsEditModalOpen(true)}
+                        className="w-full mt-2 py-2 px-4 rounded-full font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent"
+                    >
                         Edit Profile
                     </button>
                 )}
@@ -184,6 +231,15 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
              </div>
           </div>
       </div>
+
+      {user && (
+        <EditProfileModal
+            user={user}
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            onUpdate={(updatedUser) => setUser(updatedUser)}
+        />
+      )}
     </div>
   );
 };
