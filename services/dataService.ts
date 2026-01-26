@@ -291,6 +291,17 @@ export const updateProfile = async (bio: string, profileImagePath: string): Prom
     body: JSON.stringify({ bio, profileImagePath }),
   });
 
+  // Merge with existing user data to ensure ID and other fields are preserved
+  // if the backend response is partial (e.g. only returns updated fields)
+  const storedUserStr = localStorage.getItem('user');
+  if (storedUserStr) {
+      const storedUser = JSON.parse(storedUserStr);
+      if (!response.userId && !response.id) response.id = storedUser.id;
+      if (!response.username) response.username = storedUser.username;
+      if (!response.displayName) response.displayName = storedUser.displayName;
+      if (!response.friends) response.friends = storedUser.friends;
+  }
+
   const user = mapUser(response);
   localStorage.setItem('user', JSON.stringify(user));
   return user;
