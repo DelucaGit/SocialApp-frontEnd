@@ -267,6 +267,31 @@ export const getCurrentUser = async (): Promise<User | null> => {
   return null;
 };
 
+export const updateProfile = async (bio: string, profileImagePath: string): Promise<User> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const storedUserStr = localStorage.getItem('user');
+    if (storedUserStr) {
+      const user = JSON.parse(storedUserStr);
+      user.bio = bio;
+      user.profileImagePath = profileImagePath;
+      user.avatar = profileImagePath || `https://www.gravatar.com/avatar/${user.username}?d=identicon`;
+      localStorage.setItem('user', JSON.stringify(user));
+      return user;
+    }
+    throw new Error("No user logged in");
+  }
+
+  const response = await apiRequest<any>('/my', {
+    method: 'PATCH',
+    body: JSON.stringify({ bio, profileImagePath }),
+  });
+
+  const user = mapUser(response);
+  localStorage.setItem('user', JSON.stringify(user));
+  return user;
+};
+
 export const createPost = async (content: string): Promise<Post> => {
   if (USE_MOCK_DATA) {
     await delay(500);

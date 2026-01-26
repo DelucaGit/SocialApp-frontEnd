@@ -4,6 +4,7 @@ import { User, Post } from '../types';
 import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getMyFriends } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check, X } from 'lucide-react';
+import EditProfileModal from './EditProfileModal';
 
 interface UserProfileProps {
   currentUser: User | null;
@@ -19,6 +20,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [requestSent, setRequestSent] = useState(false);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -139,7 +141,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 )}
                 
                 {currentUser && currentUser.id === user.id && (
-                    <button className="w-full mt-2 py-2 px-4 rounded-full font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent">
+                    <button 
+                        onClick={() => setIsEditModalOpen(true)}
+                        className="w-full mt-2 py-2 px-4 rounded-full font-bold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent"
+                    >
                         Edit Profile
                     </button>
                 )}
@@ -226,6 +231,15 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
              </div>
           </div>
       </div>
+
+      {user && (
+        <EditProfileModal
+            user={user}
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            onUpdate={(updatedUser) => setUser(updatedUser)}
+        />
+      )}
     </div>
   );
 };
