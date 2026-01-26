@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Post, Comment, User } from '../types';
-import { getPost, getComments, getUser, createComment } from '../services/dataService';
+import { getPost, getComments, getUser, createComment, getReplies } from '../services/dataService';
 import PostCard from './PostCard';
 import CommentNode from './CommentNode';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -22,7 +22,17 @@ const PostDetail: React.FC = () => {
       setLoading(true);
       
       const postData = await getPost(postId);
-      const commentsData = await getComments(postId);
+      const rootComments = await getComments(postId);
+
+      // Fetch replies for the root comments
+      const repliesArrays = await Promise.all(rootComments.map(async (c) => {
+          try {
+              return await getReplies(c.id);
+          } catch (e) {
+              return [];
+          }
+      }));
+      const commentsData = [...rootComments, ...repliesArrays.flat()];
 
       // Collect user IDs to fetch
       const userIds = new Set<string>();
@@ -49,7 +59,24 @@ const PostDetail: React.FC = () => {
       } else {
         setPost(null);
       }
-      setComments(commentsData);
+      
+      // Build Comment Tree
+      const commentMap: Record<string, Comment> = {};
+      const treeRoots: Comment[] = [];
+
+      commentsData.forEach(c => {
+          commentMap[c.id] = { ...c, replies: [] };
+      });
+
+      commentsData.forEach(c => {
+          if (c.parentId && commentMap[c.parentId]) {
+              commentMap[c.parentId].replies!.push(commentMap[c.id]);
+          } else {
+              treeRoots.push(commentMap[c.id]);
+          }
+      });
+
+      setComments(treeRoots);
       setLoading(false);
     };
 
@@ -84,6 +111,65 @@ const PostDetail: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleReply = (newComment: Comment) => {
+      // Add the new reply to the correct parent in the state
+      const addReplyToTree = (nodes: Comment[]): Comment[] => {
+          return nodes.map(node => {
+              if (node.id === newComment.parentId) {
+                  return { 
+                      ...node, 
+                      replies: [...(node.replies || []), newComment] 
+                  };
+              }
+              if (node.replies && node.replies.length > 0) {
+                  return { 
+                      ...node, 
+                      replies: addReplyToTree(node.replies) 
+                  };
+              }
+              return node;
+          });
+      };
+
+      setComments(prev => addReplyToTree(prev));
+      if (post) setPost({ ...post, commentCount: (post.commentCount || 0) + 1 });
+  };
+
+  const handleRepliesLoaded = async (commentId: string, newReplies: Comment[]) => {
+      // 1. Update Comment Tree
+      const updateTree = (nodes: Comment[]): Comment[] => {
+          return nodes.map(node => {
+              if (node.id === commentId) {
+                  return { ...node, replies: [...(node.replies || []), ...newReplies] };
+              }
+              if (node.replies && node.replies.length > 0) {
+                  return { ...node, replies: updateTree(node.replies) };
+              }
+              return node;
+          });
+      };
+      setComments(prev => updateTree(prev));
+
+      // 2. Fetch missing users for the new replies
+      const newUserIds = new Set<string>();
+      const collectUserIds = (cList: Comment[]) => {
+          cList.forEach(c => {
+              if (!usersCache[c.authorId]) newUserIds.add(c.authorId);
+              if (c.replies) collectUserIds(c.replies);
+          });
+      };
+      collectUserIds(newReplies);
+
+      if (newUserIds.size > 0) {
+          const newUsers: Record<string, User> = {};
+          await Promise.all(Array.from(newUserIds).map(async (uid) => {
+             const u = await getUser(uid);
+             if (u) newUsers[uid] = u;
+          }));
+          setUsersCache(prev => ({ ...prev, ...newUsers }));
+      }
   };
 
   if (loading) return (
@@ -141,7 +227,14 @@ const PostDetail: React.FC = () => {
          <div className="space-y-2">
              {comments.length > 0 ? (
                  comments.map(comment => (
-                     <CommentNode key={comment.id} comment={comment} usersCache={usersCache} />
+                     <CommentNode 
+                        key={comment.id} 
+                        comment={comment} 
+                        usersCache={usersCache} 
+                        onReply={handleReply} 
+                        onRepliesLoaded={handleRepliesLoaded}
+                        allowLoadMore={false} // Root comments have already loaded their immediate children
+                     />
                  ))
              ) : (
                  <div className="text-center py-10 text-gray-400 text-sm">

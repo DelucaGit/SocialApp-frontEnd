@@ -77,7 +77,9 @@ const mapComment = (comment: any): Comment => {
     authorId: String(comment.userId || comment.authorId),
     authorName: comment.username || comment.authorName || 'Unknown',
     content: comment.text || comment.content,
-    timestamp: formattedDate
+    timestamp: formattedDate,
+    parentId: comment.parentId ? String(comment.parentId) : undefined,
+    replies: []
   };
 };
 
@@ -337,7 +339,19 @@ export const getPosts = async (page: number, limit: number): Promise<Post[]> => 
     rawPosts = response;
   }
 
-  return rawPosts.map(mapPost);
+  const posts = rawPosts.map(mapPost);
+
+  // Fetch comments for each post to get the count (fallback since backend doesn't provide it)
+  const postsWithCounts = await Promise.all(posts.map(async (post) => {
+    try {
+      const comments = await getComments(post.id);
+      return { ...post, commentCount: comments.length };
+    } catch (err) {
+      return post;
+    }
+  }));
+
+  return postsWithCounts;
 };
 
 export const getPost = async (postId: string): Promise<Post | undefined> => {
@@ -392,6 +406,48 @@ export const createComment = async (postId: string, content: string): Promise<Co
   return mapComment(response);
 };
 
+export const replyToComment = async (commentId: string, content: string): Promise<Comment> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const newComment: Comment = {
+      id: `reply-${Date.now()}`,
+      postId: 'mock-post-id',
+      authorId: 'curr',
+      authorName: 'You',
+      content,
+      timestamp: new Date().toISOString()
+    };
+    return newComment;
+  }
+
+  const response = await apiRequest<any>(`/comments/${commentId}/replies`, {
+    method: 'POST',
+    body: JSON.stringify({ text: content }),
+  });
+
+  // Ensure parentId is set so the UI can correctly place it in the comment tree
+  return mapComment({ ...response, parentId: commentId });
+};
+
+export const getReplies = async (commentId: string): Promise<Comment[]> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    return [];
+  }
+
+  const response = await apiRequest<any>(`/comments/${commentId}/replies`);
+
+  let rawComments: any[] = [];
+  if (response.content && Array.isArray(response.content)) {
+    rawComments = response.content;
+  } else if (Array.isArray(response)) {
+    rawComments = response;
+  }
+
+  // Inject parentId because the endpoint might not return it in the body
+  return rawComments.map(c => mapComment({ ...c, parentId: commentId }));
+};
+
 export const getUser = async (userId: string): Promise<User | null> => {
   if (!userId || userId === 'undefined') return null;
 
@@ -427,16 +483,12 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
     
     const posts = rawPosts.map(mapPost);
 
-    // Fetch comments for each post to get the correct count
+    // Fetch comments for each post to get the count (fallback since backend doesn't provide it)
     const postsWithCounts = await Promise.all(posts.map(async (post) => {
       try {
         const comments = await getComments(post.id);
-        return {
-          ...post,
-          commentCount: comments.length
-        };
+        return { ...post, commentCount: comments.length };
       } catch (err) {
-        console.warn(`Failed to fetch comments for post ${post.id}`, err);
         return post;
       }
     }));
