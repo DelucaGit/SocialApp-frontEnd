@@ -53,6 +53,8 @@ const mapPost = (post: any): Post => {
     ...post,
     id: String(post.postId || post.id),
     authorId: post.userId ? String(post.userId) : (post.authorId ? String(post.authorId) : ''),
+    authorName: post.username || post.authorName || 'Unknown',
+    authorAvatar: post.profileImagePath || post.userAvatar || post.authorAvatar || `https://www.gravatar.com/avatar/${post.username || 'default'}?d=identicon`,
     content: post.text || post.content, // Map 'text' from backend to 'content'
     timestamp: formattedDate,
     commentCount: count
@@ -414,7 +416,7 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
   
   // Use the endpoint provided by the user: /posts/user/{userId}
   try {
-    const response = await apiRequest<any>(`/posts/user/${userId}`);
+    const response = await apiRequest<any>(`/users/${userId}/posts`);
     
     let rawPosts: any[] = [];
     if (response.content && Array.isArray(response.content)) {
@@ -474,6 +476,20 @@ export const getMyFriends = async (): Promise<User[]> => {
   } catch (e) {
     console.warn("Failed to fetch my friends", e);
     return [];
+  }
+};
+
+export const getFriendshipStatus = async (userId: string): Promise<{friendshipId: number, status: string, isIncomingRequest: boolean} | null> => {
+  if (USE_MOCK_DATA) {
+    await delay(200);
+    return null;
+  }
+  try {
+    const response = await apiRequest<any>(`/friendships/status/${userId}`);
+    if (!response || (!response.friendshipId && !response.status)) return null;
+    return response;
+  } catch (e) {
+    return null;
   }
 };
 
@@ -543,7 +559,7 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
         // Fetch user details for each request to get username and avatar
         const requests = await Promise.all(response.map(async (req) => {
             const senderId = String(req.senderId || req.userId);
-            let senderName = req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
+            let senderName = req.friendUsername || req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
             let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
 
             // If name is Unknown or we just want to be sure, fetch the user details

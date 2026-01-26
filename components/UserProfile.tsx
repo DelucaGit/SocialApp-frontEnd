@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getMyFriends } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getFriendshipStatus, acceptFriendRequest, rejectFriendRequest } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check, X } from 'lucide-react';
 import EditProfileModal from './EditProfileModal';
@@ -16,9 +16,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFriend, setIsFriend] = useState(false);
-  const [friendshipId, setFriendshipId] = useState<string | null>(null);
-  const [requestSent, setRequestSent] = useState(false);
+  const [friendshipData, setFriendshipData] = useState<{id: string, status: string, isIncoming: boolean} | null>(null);
   const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -35,18 +33,17 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       setFriends(userFriends);
       
       // Check if friend and get friendship ID
-      if (currentUser) {
+      if (currentUser && currentUser.id !== userId) {
           try {
-              // Fetch the current user's friends list which should contain the friendshipId
-              const myFriends = await getMyFriends();
-              const friendRecord = myFriends.find(f => f.id === userId);
-              
-              if (friendRecord) {
-                  setIsFriend(true);
-                  setFriendshipId(friendRecord.friendshipId || null);
+              const statusData = await getFriendshipStatus(userId);
+              if (statusData) {
+                  setFriendshipData({
+                      id: String(statusData.friendshipId),
+                      status: statusData.status,
+                      isIncoming: statusData.isIncomingRequest
+                  });
               } else {
-                  setIsFriend(false);
-                  setFriendshipId(null);
+                  setFriendshipData(null);
               }
           } catch (e) {
               console.warn("Failed to check friendship status", e);
@@ -59,37 +56,56 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
     fetchData();
   }, [userId, currentUser]);
 
-  const handleFriendToggle = async () => {
-      if (!user || !currentUser) return;
-      
-      if (isFriend) {
-          // Logic to remove friend
-          if (!friendshipId) {
-              alert("Cannot remove friend: Friendship ID not found.");
-              return;
-          }
-          
-          if (window.confirm(`Are you sure you want to remove ${user.displayName} from your friends?`)) {
-              try {
-                  await deleteFriendship(friendshipId);
-                  setIsFriend(false);
-                  setFriendshipId(null);
-                  alert("Friend removed.");
-              } catch (error) {
-                  console.error("Failed to remove friend", error);
-                  alert("Failed to remove friend.");
-              }
-          }
-          return;
-      }
-
+  const handleSendRequest = async () => {
+      if (!user) return;
       try {
           await sendFriendRequest(user.id);
-          setRequestSent(true);
-          alert("Friend request sent!");
+          // Refresh status to get the new ID
+          const status = await getFriendshipStatus(user.id);
+          if (status) {
+             setFriendshipData({
+                 id: String(status.friendshipId),
+                 status: status.status,
+                 isIncoming: status.isIncomingRequest
+             });
+          }
       } catch (error) {
           console.error("Failed to send friend request", error);
-          alert("Failed to send friend request");
+      }
+  };
+
+  const handleAcceptRequest = async () => {
+      if (!friendshipData) return;
+      try {
+          await acceptFriendRequest(friendshipData.id);
+          setFriendshipData(prev => prev ? { ...prev, status: 'ACCEPTED' } : null);
+      } catch (error) {
+          console.error("Failed to accept request", error);
+      }
+  };
+
+  const handleRejectRequest = async () => {
+      if (!friendshipData) return;
+      try {
+          await rejectFriendRequest(friendshipData.id);
+          setFriendshipData(null);
+      } catch (error) {
+          console.error("Failed to reject request", error);
+      }
+  };
+
+  const handleRemoveOrCancel = async () => {
+      if (!friendshipData) return;
+      const isPending = friendshipData.status === 'PENDING';
+      const message = isPending ? "Cancel friend request?" : `Remove ${user?.displayName} from friends?`;
+      
+      if (window.confirm(message)) {
+          try {
+              await deleteFriendship(friendshipData.id);
+              setFriendshipData(null);
+          } catch (error) {
+              console.error("Failed to remove/cancel", error);
+          }
       }
   };
 
@@ -113,31 +129,35 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 </p>
 
                 {currentUser && currentUser.id !== user.id && (
-                    <button 
-                        onClick={handleFriendToggle}
-                        disabled={requestSent}
-                        className={`w-full py-2 px-4 rounded-full font-bold text-sm flex items-center justify-center space-x-2 transition ${
-                            isFriend 
-                            ? 'border border-red-600 text-red-600 hover:bg-red-50' 
-                            : requestSent 
-                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                    >
-                        {isFriend ? (
-                            <>
-                                <X size={16} />
-                                <span>Remove Friend</span>
-                            </>
-                        ) : requestSent ? (
-                            <span>Request Sent</span>
-                        ) : (
-                            <>
+                    <div className="w-full mt-2">
+                        {!friendshipData ? (
+                            <button onClick={handleSendRequest} className="w-full py-2 px-4 rounded-full font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center space-x-2 transition">
                                 <Plus size={16} />
                                 <span>Add Friend</span>
-                            </>
-                        )}
-                    </button>
+                            </button>
+                        ) : friendshipData.status === 'ACCEPTED' ? (
+                            <button onClick={handleRemoveOrCancel} className="w-full py-2 px-4 rounded-full font-bold text-sm border border-red-600 text-red-600 hover:bg-red-50 flex items-center justify-center space-x-2 transition">
+                                <X size={16} />
+                                <span>Remove Friend</span>
+                            </button>
+                        ) : friendshipData.status === 'PENDING' && friendshipData.isIncoming ? (
+                            <div className="flex space-x-2">
+                                <button onClick={handleAcceptRequest} className="flex-1 py-2 px-4 rounded-full font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center space-x-2 transition">
+                                    <Check size={16} />
+                                    <span>Accept</span>
+                                </button>
+                                <button onClick={handleRejectRequest} className="flex-1 py-2 px-4 rounded-full font-bold text-sm bg-red-600 text-white hover:bg-red-700 flex items-center justify-center space-x-2 transition">
+                                    <X size={16} />
+                                    <span>Reject</span>
+                                </button>
+                            </div>
+                        ) : friendshipData.status === 'PENDING' && !friendshipData.isIncoming ? (
+                            <button onClick={handleRemoveOrCancel} className="w-full py-2 px-4 rounded-full font-bold text-sm bg-gray-300 text-gray-700 hover:bg-gray-400 flex items-center justify-center space-x-2 transition">
+                                <X size={16} />
+                                <span>Cancel Request</span>
+                            </button>
+                        ) : null}
+                    </div>
                 )}
                 
                 {currentUser && currentUser.id === user.id && (
