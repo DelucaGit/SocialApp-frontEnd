@@ -619,78 +619,39 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
         console.log("Friend Requests Response:", response); // Debugging
         if (!Array.isArray(response)) return [];
         
-        // Get current user ID to filter out outgoing requests
-        let currentUserId = '';
-        const storedUserStr = localStorage.getItem('user');
-        if (storedUserStr) {
-            try {
-                const storedUser = JSON.parse(storedUserStr);
-                currentUserId = String(storedUser.id);
-            } catch (e) {
-                // ignore
-            }
-        }
+        // Filter out requests that are NOT incoming
+        const incomingRequests = response.filter(req => req.isIncoming === true);
 
         // Fetch user details for each request to get username and avatar
-        const requests = await Promise.all(response.map(async (req) => {
-            // Try to identify the friend's ID (the other person)
-            let friendId = '';
-            
-            // If senderId is present and is NOT me, then sender is the friend.
-            if (req.senderId && String(req.senderId) !== currentUserId) {
-                friendId = String(req.senderId);
-            } 
-            // If senderId is present and IS me, then receiver is the friend.
-            else if (req.senderId && String(req.senderId) === currentUserId) {
-                friendId = String(req.receiverId || req.friendId || req.userId);
-            }
-            // Fallback: try other fields if senderId is missing
-            else {
-                friendId = String(req.userId || req.id);
-            }
-            
-            // If we can't identify a friend ID, or it matches current user (weird), skip
-            if (!friendId || friendId === currentUserId || friendId === 'undefined') return null;
-
-            // Verify status to ensure it is INCOMING
-            try {
-                const status = await getFriendshipStatus(friendId);
-                if (!status || !status.isIncomingRequest) {
-                    return null; // It's outgoing or not pending, filter it out
-                }
-            } catch (e) {
-                console.warn(`Could not verify status for friend ${friendId}`, e);
-                return null; // Safe fail
-            }
-
-            // If we are here, it IS an incoming request from friendId
-            let senderName = req.friendUsername || req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
-            let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
+        const requests = await Promise.all(incomingRequests.map(async (req) => {
+            // Since it's incoming, the 'friend' in the DTO is the SENDER
+            const senderId = String(req.friendId);
+            let senderName = req.friendUsername || 'Unknown';
+            let senderAvatar = req.profileImagePath || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
 
             // If name is Unknown or we just want to be sure, fetch the user details
-            if (friendId) {
+            if (senderId && senderName === 'Unknown') {
                 try {
-                    const user = await getUser(friendId);
+                    const user = await getUser(senderId);
                     if (user) {
                         senderName = user.username;
                         senderAvatar = user.avatar;
                     }
                 } catch (e) {
-                    console.warn(`Could not fetch details for sender ${friendId}`, e);
+                    console.warn(`Could not fetch details for sender ${senderId}`, e);
                 }
             }
 
             return {
-                id: String(req.friendshipId || req.id),
-                senderId: friendId,
+                id: String(req.friendshipId),
+                senderId: senderId,
                 senderName: senderName,
                 senderAvatar: senderAvatar,
-                status: req.status || 'PENDING'
+                status: 'PENDING' // Assuming /my/friend-request only returns pending ones
             };
         }));
         
-        // Filter out nulls (outgoing requests)
-        return requests.filter((req): req is FriendRequest => req !== null);
+        return requests;
     } catch (e) {
         console.warn("Failed to fetch friend requests", e);
         return [];
