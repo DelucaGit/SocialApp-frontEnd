@@ -614,14 +614,32 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
         console.log("Friend Requests Response:", response); // Debugging
         if (!Array.isArray(response)) return [];
         
+        // Get current user ID to filter out outgoing requests
+        let currentUserId = '';
+        const storedUserStr = localStorage.getItem('user');
+        if (storedUserStr) {
+            try {
+                const storedUser = JSON.parse(storedUserStr);
+                currentUserId = String(storedUser.id);
+            } catch (e) {
+                // ignore
+            }
+        }
+
         // Fetch user details for each request to get username and avatar
         const requests = await Promise.all(response.map(async (req) => {
             const senderId = String(req.senderId || req.userId);
+            
+            // Skip if I am the sender
+            if (currentUserId && senderId === currentUserId) {
+                return null;
+            }
+
             let senderName = req.friendUsername || req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
             let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
 
             // If name is Unknown or we just want to be sure, fetch the user details
-            if (senderId) {
+            if (senderId && senderName === 'Unknown') {
                 try {
                     const user = await getUser(senderId);
                     if (user) {
@@ -642,7 +660,8 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
             };
         }));
         
-        return requests;
+        // Filter out nulls (outgoing requests)
+        return requests.filter((req): req is FriendRequest => req !== null);
     } catch (e) {
         console.warn("Failed to fetch friend requests", e);
         return [];
