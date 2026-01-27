@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getFriendshipStatus, acceptFriendRequest, rejectFriendRequest } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getFriendshipStatus, acceptFriendRequest, rejectFriendRequest, getFriendRequests } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check, X } from 'lucide-react';
 import EditProfileModal from './EditProfileModal';
@@ -37,10 +37,37 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
           try {
               const statusData = await getFriendshipStatus(userId);
               if (statusData) {
+                  // Workaround: Check if this user is in my incoming requests list
+                  // This fixes the issue where backend might return incorrect isIncomingRequest
+                  let isIncoming = statusData.isIncomingRequest;
+                  
+                  if (statusData.status === 'PENDING') {
+                      try {
+                          const myRequests = await getFriendRequests();
+                          const requestFromThisUser = myRequests.find(req => req.senderId === userId);
+                          if (requestFromThisUser) {
+                              isIncoming = true;
+                          } else if (isIncoming) {
+                              // If backend says incoming but it's not in my requests list, 
+                              // it might be outgoing (or the list is empty/failed)
+                              // But let's trust the list if we found it.
+                              // If we didn't find it, we can't be 100% sure it's outgoing without checking sent requests (which we don't have endpoint for)
+                              // So we'll stick with backend value unless we prove it's incoming.
+                              
+                              // Actually, if I am the sender, it should NOT be in my incoming requests.
+                              // If backend says isIncoming=true, but it's NOT in my list, it's suspicious.
+                              // Let's assume if it's not in my incoming list, it's outgoing.
+                              isIncoming = false;
+                          }
+                      } catch (err) {
+                          console.warn("Failed to cross-check with friend requests list", err);
+                      }
+                  }
+
                   setFriendshipData({
                       id: String(statusData.friendshipId),
                       status: statusData.status,
-                      isIncoming: statusData.isIncomingRequest
+                      isIncoming: isIncoming
                   });
               } else {
                   setFriendshipData(null);
@@ -66,7 +93,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
              setFriendshipData({
                  id: String(status.friendshipId),
                  status: status.status,
-                 isIncoming: status.isIncomingRequest
+                 isIncoming: false // We just sent it, so it's definitely outgoing
              });
           }
       } catch (error) {
