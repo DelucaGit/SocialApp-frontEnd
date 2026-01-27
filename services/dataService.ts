@@ -650,7 +650,7 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
             }
             
             // If we can't identify a friend ID, or it matches current user (weird), skip
-            if (!friendId || friendId === currentUserId) return null;
+            if (!friendId || friendId === currentUserId || friendId === 'undefined') return null;
 
             // Verify status to ensure it is INCOMING
             try {
