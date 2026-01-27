@@ -2,9 +2,9 @@ import { MOCK_POSTS, MOCK_USERS, MOCK_COMMENTS } from '../constants';
 import { Post, User, Comment } from '../types';
 
 // Configuration for API
-const USE_LOCAL_API = true; // Set to true to use your local Java backend
-const REMOTE_API_URL = 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
-const LOCAL_API_URL = 'http://localhost:8080'; // Direct URL to backend to avoid proxy issues
+const USE_LOCAL_API = import.meta.env.VITE_USE_LOCAL_API === 'true'; 
+const REMOTE_API_URL = import.meta.env.VITE_REMOTE_API_URL || 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
+const LOCAL_API_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8080'; 
 
 const API_BASE_URL = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
 const USE_MOCK_DATA = false; 
@@ -290,6 +290,17 @@ export const updateProfile = async (bio: string, profileImagePath: string): Prom
     method: 'PATCH',
     body: JSON.stringify({ bio, profileImagePath }),
   });
+
+  // Merge with existing user data to ensure ID and other fields are preserved
+  // if the backend response is partial (e.g. only returns updated fields)
+  const storedUserStr = localStorage.getItem('user');
+  if (storedUserStr) {
+      const storedUser = JSON.parse(storedUserStr);
+      if (!response.userId && !response.id) response.id = storedUser.id;
+      if (!response.username) response.username = storedUser.username;
+      if (!response.displayName) response.displayName = storedUser.displayName;
+      if (!response.friends) response.friends = storedUser.friends;
+  }
 
   const user = mapUser(response);
   localStorage.setItem('user', JSON.stringify(user));
