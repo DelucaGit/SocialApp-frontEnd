@@ -6,7 +6,9 @@ const USE_LOCAL_API = import.meta.env.VITE_USE_LOCAL_API === 'true';
 const REMOTE_API_URL = import.meta.env.VITE_REMOTE_API_URL || 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
 const LOCAL_API_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8080'; 
 
-const API_BASE_URL = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
+// Ensure API_BASE_URL doesn't end with a slash
+const rawBaseUrl = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
+const API_BASE_URL = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
 const USE_MOCK_DATA = false; 
 
 console.log("Using API Base URL:", API_BASE_URL);
@@ -104,8 +106,11 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
     credentials: 'include',
   };
 
+  // Ensure endpoint starts with a slash if not present
+  const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
   try {
-    let response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    let response = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
     
     // Handle 401 Unauthorized (Token Expired)
     // We skip this logic for login/logout/refresh endpoints to avoid infinite loops
@@ -128,7 +133,7 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
             
             // Update the header with the new token and retry the original request
             if (config.headers) (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
-            response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+            response = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
           }
         } else {
           // Refresh failed (token invalid or expired), force logout
@@ -628,32 +633,56 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
 
         // Fetch user details for each request to get username and avatar
         const requests = await Promise.all(response.map(async (req) => {
-            const senderId = String(req.senderId || req.userId);
+            // Try to identify the friend's ID (the other person)
+            let friendId = '';
             
-            // Skip if I am the sender
-            if (currentUserId && senderId === currentUserId) {
-                return null;
+            // If senderId is present and is NOT me, then sender is the friend.
+            if (req.senderId && String(req.senderId) !== currentUserId) {
+                friendId = String(req.senderId);
+            } 
+            // If senderId is present and IS me, then receiver is the friend.
+            else if (req.senderId && String(req.senderId) === currentUserId) {
+                friendId = String(req.receiverId || req.friendId || req.userId);
+            }
+            // Fallback: try other fields if senderId is missing
+            else {
+                friendId = String(req.userId || req.id);
+            }
+            
+            // If we can't identify a friend ID, or it matches current user (weird), skip
+            if (!friendId || friendId === currentUserId) return null;
+
+            // Verify status to ensure it is INCOMING
+            try {
+                const status = await getFriendshipStatus(friendId);
+                if (!status || !status.isIncomingRequest) {
+                    return null; // It's outgoing or not pending, filter it out
+                }
+            } catch (e) {
+                console.warn(`Could not verify status for friend ${friendId}`, e);
+                return null; // Safe fail
             }
 
+            // If we are here, it IS an incoming request from friendId
             let senderName = req.friendUsername || req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
             let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
 
             // If name is Unknown or we just want to be sure, fetch the user details
-            if (senderId && senderName === 'Unknown') {
+            if (friendId) {
                 try {
-                    const user = await getUser(senderId);
+                    const user = await getUser(friendId);
                     if (user) {
                         senderName = user.username;
                         senderAvatar = user.avatar;
                     }
                 } catch (e) {
-                    console.warn(`Could not fetch details for sender ${senderId}`, e);
+                    console.warn(`Could not fetch details for sender ${friendId}`, e);
                 }
             }
 
             return {
                 id: String(req.friendshipId || req.id),
-                senderId: senderId,
+                senderId: friendId,
                 senderName: senderName,
                 senderAvatar: senderAvatar,
                 status: req.status || 'PENDING'
