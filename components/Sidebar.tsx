@@ -74,13 +74,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
                 <ul className="space-y-2">
                     {friendRequests.map(req => (
                         <li key={req.id} className="px-2 py-2 bg-gray-50 rounded-md border border-gray-100">
-                            <div className="flex items-center space-x-2 mb-2">
+                            <Link to={`/user/${req.senderId}`} className="flex items-center space-x-2 mb-2 hover:opacity-80 transition">
                                 <img src={req.senderAvatar} alt={req.senderName} className="w-8 h-8 rounded-full object-cover" />
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-gray-900 truncate">{req.senderName}</p>
                                     <p className="text-xs text-gray-500">wants to be friends</p>
                                 </div>
-                            </div>
+                            </Link>
                             <div className="flex space-x-2">
                                 <button 
                                     onClick={() => handleAccept(req.id)}

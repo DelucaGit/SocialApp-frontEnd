@@ -6,7 +6,9 @@ const USE_LOCAL_API = import.meta.env.VITE_USE_LOCAL_API === 'true';
 const REMOTE_API_URL = import.meta.env.VITE_REMOTE_API_URL || 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
 const LOCAL_API_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8080'; 
 
-const API_BASE_URL = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
+// Ensure API_BASE_URL doesn't end with a slash
+const rawBaseUrl = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
+const API_BASE_URL = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
 const USE_MOCK_DATA = false; 
 
 console.log("Using API Base URL:", API_BASE_URL);
@@ -104,8 +106,11 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
     credentials: 'include',
   };
 
+  // Ensure endpoint starts with a slash if not present
+  const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
   try {
-    let response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    let response = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
     
     // Handle 401 Unauthorized (Token Expired)
     // We skip this logic for login/logout/refresh endpoints to avoid infinite loops
@@ -128,7 +133,7 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
             
             // Update the header with the new token and retry the original request
             if (config.headers) (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
-            response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+            response = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
           }
         } else {
           // Refresh failed (token invalid or expired), force logout
@@ -168,16 +173,14 @@ export const login = async (credentials: any): Promise<{ token: string, user: Us
   if (token) {
     localStorage.setItem('token', token);
 
-    // Fetch user details using userId from login response
-    if (response.userId) {
-         try {
-            const userData = await apiRequest<any>(`/users/${response.userId}`);
-            const user = mapUser(userData);
-            localStorage.setItem('user', JSON.stringify(user));
-            return { token, user };
-         } catch (e) {
-             console.error("Failed to fetch user details via userId", e);
-         }
+    // Fetch user details using /my endpoint
+    try {
+        const userData = await apiRequest<any>('/my');
+        const user = mapUser(userData);
+        localStorage.setItem('user', JSON.stringify(user));
+        return { token, user };
+    } catch (e) {
+        console.error("Failed to fetch user details via /my", e);
     }
     
     return { token, user: null };
@@ -195,16 +198,14 @@ export const register = async (userData: any): Promise<{ token: string, user: Us
   if (response.accessToken) {
     localStorage.setItem('token', response.accessToken);
     
-    // Fetch user details using userId if available
-    if (response.userId) {
-        try {
-            const userData = await apiRequest<any>(`/users/${response.userId}`);
-            const user = mapUser(userData);
-            localStorage.setItem('user', JSON.stringify(user));
-            return { token: response.accessToken, user };
-        } catch (e) {
-            console.error("Failed to fetch user details via userId after register", e);
-        }
+    // Fetch user details using /my endpoint
+    try {
+        const userData = await apiRequest<any>('/my');
+        const user = mapUser(userData);
+        localStorage.setItem('user', JSON.stringify(user));
+        return { token: response.accessToken, user };
+    } catch (e) {
+        console.error("Failed to fetch user details via /my after register", e);
     }
     
     return { token: response.accessToken, user: null };
@@ -248,15 +249,14 @@ export const getCurrentUser = async (): Promise<User | null> => {
     }
   }
 
-  if (userId) {
-    try {
-      const userData = await apiRequest<any>(`/users/${userId}`);
-      const user = mapUser(userData);
-      localStorage.setItem('user', JSON.stringify(user));
-      return user;
-    } catch (e) {
-      console.warn("Failed to refresh user data from API", e);
-    }
+  // Always try to refresh user data from API using /my
+  try {
+    const userData = await apiRequest<any>('/my');
+    const user = mapUser(userData);
+    localStorage.setItem('user', JSON.stringify(user));
+    return user;
+  } catch (e) {
+    console.warn("Failed to refresh user data from API", e);
   }
 
   // Fallback: return stored user if API failed or we couldn't refresh
@@ -619,14 +619,18 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
         console.log("Friend Requests Response:", response); // Debugging
         if (!Array.isArray(response)) return [];
         
+        // Filter out requests that are NOT incoming
+        const incomingRequests = response.filter(req => req.isIncoming === true);
+
         // Fetch user details for each request to get username and avatar
-        const requests = await Promise.all(response.map(async (req) => {
-            const senderId = String(req.senderId || req.userId);
-            let senderName = req.friendUsername || req.senderName || req.username || req.senderUsername || (req.sender && req.sender.username) || 'Unknown';
-            let senderAvatar = req.senderAvatar || req.profileImagePath || (req.sender && req.sender.profileImagePath) || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
+        const requests = await Promise.all(incomingRequests.map(async (req) => {
+            // Since it's incoming, the 'friend' in the DTO is the SENDER
+            const senderId = String(req.friendId);
+            let senderName = req.friendUsername || 'Unknown';
+            let senderAvatar = req.profileImagePath || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
 
             // If name is Unknown or we just want to be sure, fetch the user details
-            if (senderId) {
+            if (senderId && senderName === 'Unknown') {
                 try {
                     const user = await getUser(senderId);
                     if (user) {
@@ -639,11 +643,11 @@ export const getFriendRequests = async (): Promise<FriendRequest[]> => {
             }
 
             return {
-                id: String(req.friendshipId || req.id),
+                id: String(req.friendshipId),
                 senderId: senderId,
                 senderName: senderName,
                 senderAvatar: senderAvatar,
-                status: req.status || 'PENDING'
+                status: 'PENDING' // Assuming /my/friend-request only returns pending ones
             };
         }));
         
