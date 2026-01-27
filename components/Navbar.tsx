@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Bell, LogOut, Menu, MessageCircle, Plus, Search} from 'lucide-react';
+import {Bell, LogOut, Menu, MessageCircle, Search} from 'lucide-react';
 import {Link, useNavigate} from 'react-router-dom';
 import {User} from '../types';
 import {logout, searchUsers} from '../services/dataService';
@@ -97,11 +97,6 @@ const Navbar: React.FC<NavbarProps> = ({currentUser, onToggleSidebar}) => {
             </div>
 
             <div className="flex items-center space-x-1 sm:space-x-3">
-                <button
-                    className="hidden sm:flex items-center space-x-1 text-gray-700 hover:bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200 transition">
-                    <Plus size={18}/>
-                    <span className="text-sm font-medium">Create</span>
-                </button>
                 <div className="flex items-center space-x-1 text-gray-500">
                     <button className="p-2 hover:bg-gray-100 rounded-full"><Bell size={20}/></button>
                     <button className="p-2 hover:bg-gray-100 rounded-full"><MessageCircle size={20}/></button>

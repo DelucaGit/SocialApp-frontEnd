@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Post, User } from '../types';
 import PostCard from './PostCard';
 import CreatePostWidget from './CreatePostWidget';
-import { getPosts, getUser, getComments } from '../services/dataService';
+import { getPosts } from '../services/dataService';
 import { Loader2 } from 'lucide-react';
 
 interface FeedProps {
@@ -13,37 +13,15 @@ const Feed: React.FC<FeedProps> = ({ currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [usersCache, setUsersCache] = useState<Record<string, User>>({});
 
   const loadPosts = async () => {
     setLoading(true);
     try {
       const newPosts = await getPosts(page, 5);
       
-      // Fetch authors and comment counts for these posts
-      const newAuthors: Record<string, User> = {};
-      
-      const processedPosts = await Promise.all(newPosts.map(async (post) => {
-          // Fetch Author
-          if (!usersCache[post.authorId] && !newAuthors[post.authorId]) {
-              const user = await getUser(post.authorId);
-              if (user) newAuthors[user.id] = user;
-          }
-
-          // Fetch accurate comment count
-          try {
-              const comments = await getComments(post.id);
-              return { ...post, commentCount: comments.length };
-          } catch (e) {
-              return post;
-          }
-      }));
-
-      setUsersCache(prev => ({ ...prev, ...newAuthors }));
-      
       setPosts(prev => {
         const existingIds = new Set(prev.map(p => p.id));
-        const uniqueNewPosts = processedPosts.filter(p => !existingIds.has(p.id));
+        const uniqueNewPosts = newPosts.filter(p => !existingIds.has(p.id));
         return [...prev, ...uniqueNewPosts];
       });
       
@@ -61,9 +39,10 @@ const Feed: React.FC<FeedProps> = ({ currentUser }) => {
 
   const handlePostCreated = (newPost: Post) => {
     setPosts(prev => [newPost, ...prev]);
-    if (currentUser) {
-      setUsersCache(prev => ({ ...prev, [currentUser.id]: currentUser }));
-    }
+  };
+
+  const handlePostUpdated = (updatedPost: Post) => {
+    setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
   };
 
   return (
@@ -88,7 +67,9 @@ const Feed: React.FC<FeedProps> = ({ currentUser }) => {
           <PostCard 
             key={`${post.id}-${index}`} 
             post={post} 
-            author={usersCache[post.authorId]} 
+            currentUser={currentUser}
+            onPostUpdated={handlePostUpdated}
+            interactiveComments={true}
           />
         ))}
       </div>

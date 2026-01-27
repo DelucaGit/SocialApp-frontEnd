@@ -1,117 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { Home, TrendingUp, HelpCircle, UserPlus, Check, X } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Home, User, Check, X } from 'lucide-react';
+import { User as UserType } from '../types';
 import { getFriendRequests, acceptFriendRequest, rejectFriendRequest, FriendRequest } from '../services/dataService';
 
 interface SidebarProps {
-    isOpen: boolean;
+  isOpen: boolean;
+  currentUser: UserType | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
-  const location = useLocation();
-  const isActive = (path: string) => location.pathname === path;
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentUser }) => {
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
 
   useEffect(() => {
-      const fetchRequests = async () => {
-          const requests = await getFriendRequests();
-          setFriendRequests(requests);
-      };
-      fetchRequests();
-      // Poll for new requests every 30 seconds
-      const interval = setInterval(fetchRequests, 30000);
-      return () => clearInterval(interval);
-  }, []);
+    const fetchRequests = async () => {
+      if (currentUser) {
+        try {
+          const data = await getFriendRequests(); // Hämtar inkommande som default
+          setRequests(data);
+        } catch (error) {
+          console.error("Failed to fetch friend requests", error);
+        }
+      }
+    };
+    fetchRequests();
+  }, [currentUser]);
 
   const handleAccept = async (id: string) => {
-      try {
-          await acceptFriendRequest(id);
-          setFriendRequests(prev => prev.filter(req => req.id !== id));
-      } catch (e) {
-          console.error("Failed to accept request", e);
-      }
+    try {
+      await acceptFriendRequest(id);
+      setRequests(prev => prev.filter(req => req.id !== id));
+    } catch (error) {
+      console.error("Failed to accept", error);
+    }
   };
 
   const handleReject = async (id: string) => {
-      try {
-          await rejectFriendRequest(id);
-          setFriendRequests(prev => prev.filter(req => req.id !== id));
-      } catch (e) {
-          console.error("Failed to reject request", e);
-      }
+    try {
+      await rejectFriendRequest(id);
+      setRequests(prev => prev.filter(req => req.id !== id));
+    } catch (error) {
+      console.error("Failed to reject", error);
+    }
   };
 
   return (
-    <div className={`fixed inset-y-0 left-0 pt-14 z-40 w-64 bg-white border-r border-gray-200 transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform duration-300 ease-in-out lg:static lg:h-[calc(100vh-3.5rem)] overflow-y-auto no-scrollbar`}>
-      <div className="p-4 space-y-6">
-        
-        {/* Feeds */}
-        <div>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Feeds</h3>
-            <ul className="space-y-1">
-                <li>
-                    <Link to="/" className={`flex items-center space-x-3 px-2 py-2 rounded-md ${isActive('/') ? 'bg-gray-100 text-black' : 'text-gray-600 hover:bg-gray-50'}`}>
-                        <Home size={20} />
-                        <span className="text-sm font-medium">Home</span>
-                    </Link>
-                </li>
-                <li>
-                    <Link to="/popular" className="flex items-center space-x-3 px-2 py-2 rounded-md text-gray-600 hover:bg-gray-50">
-                        <TrendingUp size={20} />
-                        <span className="text-sm font-medium">Popular</span>
-                    </Link>
-                </li>
-            </ul>
-        </div>
-
-        {/* Friend Requests */}
-        {friendRequests.length > 0 && (
-            <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2 flex items-center justify-between">
-                    <span>Friend Requests</span>
-                    <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{friendRequests.length}</span>
-                </h3>
-                <ul className="space-y-2">
-                    {friendRequests.map(req => (
-                        <li key={req.id} className="px-2 py-2 bg-gray-50 rounded-md border border-gray-100">
-                            <Link to={`/user/${req.senderId}`} className="flex items-center space-x-2 mb-2 hover:opacity-80 transition">
-                                <img src={req.senderAvatar} alt={req.senderName} className="w-8 h-8 rounded-full object-cover" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">{req.senderName}</p>
-                                    <p className="text-xs text-gray-500">wants to be friends</p>
-                                </div>
-                            </Link>
-                            <div className="flex space-x-2">
-                                <button 
-                                    onClick={() => handleAccept(req.id)}
-                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-1.5 rounded flex items-center justify-center space-x-1"
-                                >
-                                    <Check size={14} />
-                                    <span>Accept</span>
-                                </button>
-                                <button 
-                                    onClick={() => handleReject(req.id)}
-                                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold py-1.5 rounded flex items-center justify-center space-x-1"
-                                >
-                                    <X size={14} />
-                                    <span>Reject</span>
-                                </button>
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        )}
-
-        <div className="border-t border-gray-200 pt-4">
-             <Link to="#" className="flex items-center space-x-3 px-2 py-2 rounded-md text-gray-600 hover:bg-gray-50">
-                <HelpCircle size={20} />
-                <span className="text-sm font-medium">Help Center</span>
+    <aside className={`
+      fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
+      lg:translate-x-0 lg:static lg:inset-auto lg:border-r-0 lg:bg-transparent lg:block
+    `}>
+      <div className="h-full overflow-y-auto p-4">
+        <nav className="space-y-1 mb-6">
+          <Link to="/" className="flex items-center px-2 py-2 text-sm font-medium text-gray-900 rounded-md hover:bg-gray-100 group">
+            <Home className="mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900" />
+            Home
+          </Link>
+          {currentUser && (
+            <Link to={`/user/${currentUser.id}`} className="flex items-center px-2 py-2 text-sm font-medium text-gray-900 rounded-md hover:bg-gray-100 group">
+              <User className="mr-3 h-6 w-6 text-gray-500 group-hover:text-gray-900" />
+              My Profile
             </Link>
-        </div>
+          )}
+        </nav>
 
+        {requests.length > 0 && (
+          <div className="mt-6">
+            <h3 className="px-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Friend Requests
+            </h3>
+            <ul className="mt-2 space-y-2">
+              {requests.map((req) => (
+                <li key={req.id} className="bg-gray-50 p-2 rounded-md border border-gray-100">
+                  <div className="flex items-center mb-2">
+                    <Link to={`/user/${req.friendId}`} className="flex-shrink-0">
+                      <img className="h-8 w-8 rounded-full object-cover" src={req.friendAvatar} alt={req.friendName} />
+                    </Link>
+                    <div className="ml-2 min-w-0 flex-1">
+                      <Link to={`/user/${req.friendId}`} className="text-sm font-medium text-gray-900 hover:underline truncate block">
+                        {req.friendName}
+                      </Link>
+                      <p className="text-xs text-gray-500 truncate">Wants to be friends</p>
+                    </div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button onClick={() => handleAccept(req.id)} className="flex-1 flex items-center justify-center px-2 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700">
+                      <Check size={12} className="mr-1" /> Accept
+                    </button>
+                    <button onClick={() => handleReject(req.id)} className="flex-1 flex items-center justify-center px-2 py-1 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700">
+                      <X size={12} className="mr-1" /> Reject
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
-    </div>
+    </aside>
   );
 };
 

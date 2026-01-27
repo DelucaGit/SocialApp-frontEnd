@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { User, Post } from '../types';
-import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getFriendshipStatus, acceptFriendRequest, rejectFriendRequest, getFriendRequests } from '../services/dataService';
+import { getUser, getUserPosts, sendFriendRequest, getFriends, deleteFriendship, getFriendshipStatus, acceptFriendRequest, rejectFriendRequest, getFriendRequests, FriendRequest } from '../services/dataService';
 import PostCard from './PostCard';
 import { Settings, Plus, Check, X } from 'lucide-react';
 import EditProfileModal from './EditProfileModal';
+import CreatePostWidget from './CreatePostWidget';
 
 interface UserProfileProps {
   currentUser: User | null;
@@ -15,9 +16,10 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [friends, setFriends] = useState<User[]>([]);
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [friendshipData, setFriendshipData] = useState<{id: string, status: string, isIncoming: boolean} | null>(null);
-  const [activeTab, setActiveTab] = useState<'posts' | 'friends'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'friends' | 'requests'>('posts');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
@@ -31,43 +33,22 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       setUser(userData);
       setPosts(userPosts);
       setFriends(userFriends);
+
+      // Fetch friend requests ONLY if viewing own profile
+      if (currentUser && currentUser.id === userId) {
+          const reqs = await getFriendRequests(true); // Hämta både inkommande och utgående
+          setRequests(reqs);
+      }
       
       // Check if friend and get friendship ID
       if (currentUser && currentUser.id !== userId) {
           try {
               const statusData = await getFriendshipStatus(userId);
               if (statusData) {
-                  // Workaround: Check if this user is in my incoming requests list
-                  // This fixes the issue where backend might return incorrect isIncomingRequest
-                  let isIncoming = statusData.isIncomingRequest;
-                  
-                  if (statusData.status === 'PENDING') {
-                      try {
-                          const myRequests = await getFriendRequests();
-                          const requestFromThisUser = myRequests.find(req => req.senderId === userId);
-                          if (requestFromThisUser) {
-                              isIncoming = true;
-                          } else if (isIncoming) {
-                              // If backend says incoming but it's not in my requests list, 
-                              // it might be outgoing (or the list is empty/failed)
-                              // But let's trust the list if we found it.
-                              // If we didn't find it, we can't be 100% sure it's outgoing without checking sent requests (which we don't have endpoint for)
-                              // So we'll stick with backend value unless we prove it's incoming.
-                              
-                              // Actually, if I am the sender, it should NOT be in my incoming requests.
-                              // If backend says isIncoming=true, but it's NOT in my list, it's suspicious.
-                              // Let's assume if it's not in my incoming list, it's outgoing.
-                              isIncoming = false;
-                          }
-                      } catch (err) {
-                          console.warn("Failed to cross-check with friend requests list", err);
-                      }
-                  }
-
                   setFriendshipData({
                       id: String(statusData.friendshipId),
                       status: statusData.status,
-                      isIncoming: isIncoming
+                      isIncoming: statusData.isIncomingRequest
                   });
               } else {
                   setFriendshipData(null);
@@ -106,6 +87,11 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
       try {
           await acceptFriendRequest(friendshipData.id);
           setFriendshipData(prev => prev ? { ...prev, status: 'ACCEPTED' } : null);
+          // Uppdatera vänlistan direkt så att du syns där
+          if (userId) {
+              const updatedFriends = await getFriends(userId);
+              setFriends(updatedFriends);
+          }
       } catch (error) {
           console.error("Failed to accept request", error);
       }
@@ -130,9 +116,44 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
           try {
               await deleteFriendship(friendshipData.id);
               setFriendshipData(null);
+              // Uppdatera vänlistan direkt
+              if (userId) {
+                  const updatedFriends = await getFriends(userId);
+                  setFriends(updatedFriends);
+              }
           } catch (error) {
               console.error("Failed to remove/cancel", error);
           }
+      }
+  };
+
+  const handlePostUpdated = (updatedPost: Post) => {
+    setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+  };
+
+  const handlePostCreated = (newPost: Post) => {
+    setPosts(prev => [newPost, ...prev]);
+  };
+
+  const handleAcceptIncoming = async (req: FriendRequest) => {
+      try {
+          await acceptFriendRequest(req.id);
+          // Remove from requests list
+          setRequests(prev => prev.filter(r => r.id !== req.id));
+          // Optionally refresh friends list
+          const updatedFriends = await getFriends(userId || '');
+          setFriends(updatedFriends);
+      } catch (error) {
+          console.error("Failed to accept request", error);
+      }
+  };
+
+  const handleRejectIncoming = async (reqId: string) => {
+      try {
+          await rejectFriendRequest(reqId);
+          setRequests(prev => prev.filter(r => r.id !== reqId));
+      } catch (error) {
+          console.error("Failed to reject request", error);
       }
   };
 
@@ -233,15 +254,36 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                 >
                      Friends
                  </button>
+                 {currentUser && currentUser.id === user.id && (
+                     <button 
+                        onClick={() => setActiveTab('requests')}
+                        className={`pb-2 px-1 text-sm font-bold border-b-2 transition whitespace-nowrap ${activeTab === 'requests' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    >
+                         Requests {requests.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{requests.length}</span>}
+                     </button>
+                 )}
              </div>
 
              {/* Tab Content */}
              <div>
                  {activeTab === 'posts' && (
                      <div className="space-y-4">
+                        {currentUser && user && currentUser.id === user.id && (
+                            <CreatePostWidget 
+                                onPostCreated={handlePostCreated} 
+                                currentUserAvatar={currentUser.avatar}
+                            />
+                        )}
                         {posts.length > 0 ? (
                             posts.map(post => (
-                                <PostCard key={post.id} post={post} author={user} />
+                                <PostCard 
+                                    key={post.id} 
+                                    post={post} 
+                                    author={user}
+                                    currentUser={currentUser}
+                                    onPostUpdated={handlePostUpdated}
+                                    interactiveComments={true}
+                                />
                             ))
                         ) : (
                             <div className="text-center py-10 bg-white rounded-lg border border-gray-200 text-gray-500">
@@ -271,6 +313,44 @@ const UserProfile: React.FC<UserProfileProps> = ({ currentUser }) => {
                                  ))
                              ) : (
                                 <p className="text-sm text-gray-500">No friends found.</p>
+                             )}
+                         </ul>
+                     </div>
+                 )}
+                 {activeTab === 'requests' && (
+                     <div className="bg-white rounded-lg border border-gray-200 p-4">
+                         <h2 className="font-bold mb-4">Friend Requests</h2>
+                         <ul className="space-y-2">
+                             {requests.length > 0 ? (
+                                 requests.map(req => (
+                                     <li key={req.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-100">
+                                         <Link to={`/user/${req.friendId}`} className="flex items-center space-x-3">
+                                            <div className="w-10 h-10 bg-gray-200 rounded-full overflow-hidden">
+                                                <img src={req.friendAvatar} alt={req.friendName} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="font-medium text-gray-900">{req.friendName}</span>
+                                                <span className="text-xs text-gray-500">{req.isIncoming ? 'Incoming Request' : 'Outgoing Request'}</span>
+                                            </div>
+                                         </Link>
+                                         <div className="flex space-x-2">
+                                            {req.isIncoming ? (
+                                                <>
+                                                    <button onClick={() => handleAcceptIncoming(req)} className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700" title="Accept">
+                                                        <Check size={16} />
+                                                    </button>
+                                                    <button onClick={() => handleRejectIncoming(req.id)} className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700" title="Reject">
+                                                        <X size={16} />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic px-2">Pending...</span>
+                                            )}
+                                         </div>
+                                     </li>
+                                 ))
+                             ) : (
+                                <p className="text-sm text-gray-500">No pending requests.</p>
                              )}
                          </ul>
                      </div>
