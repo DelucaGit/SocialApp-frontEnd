@@ -330,6 +330,25 @@ export const createPost = async (content: string): Promise<Post> => {
   return mapPost(response);
 };
 
+export const updatePost = async (postId: string, content: string): Promise<Post> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const post = MOCK_POSTS.find(p => p.id === postId);
+    if (post) {
+        post.content = content;
+        return { ...post };
+    }
+    throw new Error("Post not found");
+  }
+
+  const response = await apiRequest<any>(`/posts/${postId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ text: content }),
+  });
+
+  return mapPost(response);
+};
+
 export const getPosts = async (page: number, limit: number): Promise<Post[]> => {
   if (USE_MOCK_DATA) {
     await delay(300);
@@ -417,6 +436,25 @@ export const createComment = async (postId: string, content: string): Promise<Co
   return mapComment(response);
 };
 
+export const updateComment = async (commentId: string, content: string): Promise<Comment> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const comment = MOCK_COMMENTS.find(c => c.id === commentId);
+    if (comment) {
+        comment.content = content;
+        return { ...comment };
+    }
+    throw new Error("Comment not found");
+  }
+
+  const response = await apiRequest<any>(`/comments/${commentId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ text: content }),
+  });
+
+  return mapComment(response);
+};
+
 export const replyToComment = async (commentId: string, content: string): Promise<Comment> => {
   if (USE_MOCK_DATA) {
     await delay(300);
@@ -457,6 +495,32 @@ export const getReplies = async (commentId: string): Promise<Comment[]> => {
 
   // Inject parentId because the endpoint might not return it in the body
   return rawComments.map(c => mapComment({ ...c, parentId: commentId }));
+};
+
+export const searchUsers = async (query: string): Promise<User[]> => {
+  if (USE_MOCK_DATA) {
+    await delay(200);
+    return Object.values(MOCK_USERS).filter((u: any) => 
+        u.username.toLowerCase().includes(query.toLowerCase()) || 
+        (u.displayName && u.displayName.toLowerCase().includes(query.toLowerCase()))
+    ).map(mapUser);
+  }
+  
+  try {
+    const response = await apiRequest<any>(`/users/search?q=${encodeURIComponent(query)}&size=5`);
+    
+    let rawUsers: any[] = [];
+    if (response.content && Array.isArray(response.content)) {
+      rawUsers = response.content;
+    } else if (Array.isArray(response)) {
+      rawUsers = response;
+    }
+    
+    return rawUsers.map(mapUser);
+  } catch (e) {
+    console.error("Search error:", e);
+    return [];
+  }
 };
 
 export const getUser = async (userId: string): Promise<User | null> => {

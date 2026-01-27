@@ -1,10 +1,8 @@
 import React, {useEffect, useState} from 'react';
 import {Bell, LogOut, Menu, MessageCircle, Plus, Search} from 'lucide-react';
-import {Link} from 'react-router-dom';
+import {Link, useNavigate} from 'react-router-dom';
 import {User} from '../types';
-import {logout} from '../services/dataService';
-
-const API_BASE_URL = "https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app";
+import {logout, searchUsers} from '../services/dataService';
 
 interface NavbarProps {
     currentUser: User;
@@ -13,32 +11,18 @@ interface NavbarProps {
 
 const Navbar: React.FC<NavbarProps> = ({currentUser, onToggleSidebar}) => {
     const [searchTerm, setSearchTerm] = useState("");
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searchResults, setSearchResults] = useState<User[]>([]);
     const [showDropdown, setShowDropdown] = useState(false);
+    const navigate = useNavigate();
 
     const handleLogout = async () => {
         await logout();
+        navigate('/login'); // Eller '/' beroende på din routing
     };
 
     const fetchUsers = async (query: string) => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/users/search?q=${encodeURIComponent(query)}&size=5`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setSearchResults(data.content || []);
-            }
-        } catch (error) {
-            console.error("Search error:", error);
-        }
+        const users = await searchUsers(query);
+        setSearchResults(users);
     };
 
     useEffect(() => {
@@ -88,8 +72,8 @@ const Navbar: React.FC<NavbarProps> = ({currentUser, onToggleSidebar}) => {
                             <div className="p-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b">USERS</div>
                             {searchResults.map((user) => (
                                 <Link
-                                    key={user.userId || user.id}
-                                    to={`/user/${user.userId || user.id}`}
+                                    key={user.id}
+                                    to={`/user/${user.id}`}
                                     className="flex items-center px-4 py-3 hover:bg-blue-50 transition-colors border-b last:border-b-0"
                                     onClick={() => {
                                         setSearchTerm("");
