@@ -168,16 +168,14 @@ export const login = async (credentials: any): Promise<{ token: string, user: Us
   if (token) {
     localStorage.setItem('token', token);
 
-    // Fetch user details using userId from login response
-    if (response.userId) {
-         try {
-            const userData = await apiRequest<any>(`/users/${response.userId}`);
-            const user = mapUser(userData);
-            localStorage.setItem('user', JSON.stringify(user));
-            return { token, user };
-         } catch (e) {
-             console.error("Failed to fetch user details via userId", e);
-         }
+    // Fetch user details using /my endpoint
+    try {
+        const userData = await apiRequest<any>('/my');
+        const user = mapUser(userData);
+        localStorage.setItem('user', JSON.stringify(user));
+        return { token, user };
+    } catch (e) {
+        console.error("Failed to fetch user details via /my", e);
     }
     
     return { token, user: null };
@@ -195,16 +193,14 @@ export const register = async (userData: any): Promise<{ token: string, user: Us
   if (response.accessToken) {
     localStorage.setItem('token', response.accessToken);
     
-    // Fetch user details using userId if available
-    if (response.userId) {
-        try {
-            const userData = await apiRequest<any>(`/users/${response.userId}`);
-            const user = mapUser(userData);
-            localStorage.setItem('user', JSON.stringify(user));
-            return { token: response.accessToken, user };
-        } catch (e) {
-            console.error("Failed to fetch user details via userId after register", e);
-        }
+    // Fetch user details using /my endpoint
+    try {
+        const userData = await apiRequest<any>('/my');
+        const user = mapUser(userData);
+        localStorage.setItem('user', JSON.stringify(user));
+        return { token: response.accessToken, user };
+    } catch (e) {
+        console.error("Failed to fetch user details via /my after register", e);
     }
     
     return { token: response.accessToken, user: null };
@@ -248,15 +244,14 @@ export const getCurrentUser = async (): Promise<User | null> => {
     }
   }
 
-  if (userId) {
-    try {
-      const userData = await apiRequest<any>(`/users/${userId}`);
-      const user = mapUser(userData);
-      localStorage.setItem('user', JSON.stringify(user));
-      return user;
-    } catch (e) {
-      console.warn("Failed to refresh user data from API", e);
-    }
+  // Always try to refresh user data from API using /my
+  try {
+    const userData = await apiRequest<any>('/my');
+    const user = mapUser(userData);
+    localStorage.setItem('user', JSON.stringify(user));
+    return user;
+  } catch (e) {
+    console.warn("Failed to refresh user data from API", e);
   }
 
   // Fallback: return stored user if API failed or we couldn't refresh
