@@ -2,9 +2,9 @@ import { MOCK_POSTS, MOCK_USERS, MOCK_COMMENTS } from '../constants';
 import { Post, User, Comment } from '../types';
 
 // Configuration for API
-const USE_LOCAL_API = true; // Set to true to use your local Java backend
-const REMOTE_API_URL = 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
-const LOCAL_API_URL = 'http://localhost:8080'; // Direct URL to backend to avoid proxy issues
+const USE_LOCAL_API = import.meta.env.VITE_USE_LOCAL_API === 'true'; 
+const REMOTE_API_URL = import.meta.env.VITE_REMOTE_API_URL || 'https://outstanding-panda-jojorisinorg-51f24c08.koyeb.app';
+const LOCAL_API_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8080'; 
 
 const API_BASE_URL = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
 const USE_MOCK_DATA = false; 

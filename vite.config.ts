@@ -4,15 +4,17 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const localApiUrl = env.VITE_LOCAL_API_URL || 'http://localhost:8080';
+
     return {
       server: {
         port: 3000,
         host: '0.0.0.0',
         proxy: {
-          '/auth': 'http://localhost:8080',
-          '/users': 'http://localhost:8080',
-          '/posts': 'http://localhost:8080',
-          '/friendships': 'http://localhost:8080',
+          '/auth': localApiUrl,
+          '/users': localApiUrl,
+          '/posts': localApiUrl,
+          '/friendships': localApiUrl,
         }
       },
       plugins: [react()],
