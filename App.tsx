@@ -28,7 +28,7 @@ const ProtectedLayout: React.FC<{ currentUser: User | null, children: React.Reac
 
       <div className="flex flex-1 relative">
         {/* Sidebar */}
-        <Sidebar isOpen={isSidebarOpen} />
+        <Sidebar isOpen={isSidebarOpen} currentUser={currentUser} />
         
         {/* Overlay for mobile sidebar */}
         {isSidebarOpen && (
@@ -48,7 +48,6 @@ const ProtectedLayout: React.FC<{ currentUser: User | null, children: React.Reac
            <div className="bg-white rounded-md border border-gray-200 p-4 shadow-sm">
                <h2 className="text-sm font-bold text-gray-500 uppercase mb-3">Home</h2>
                <p className="text-sm text-gray-700 mb-4">Your personal SocialRedd frontpage. Come here to check in with your favorite people.</p>
-               <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-full transition text-sm">Create Post</button>
            </div>
            
            <div className="text-xs text-gray-500 px-2">
@@ -108,7 +107,7 @@ const AppContent: React.FC = () => {
       
       <Route path="/post/:postId" element={
         <ProtectedLayout currentUser={currentUser}>
-          <PostDetail />
+          <PostDetail currentUser={currentUser} />
         </ProtectedLayout>
       } />
       

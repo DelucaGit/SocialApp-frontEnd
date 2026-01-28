@@ -3,7 +3,7 @@ import { register } from '../services/dataService';
 import { Link, useNavigate } from 'react-router-dom';
 
 interface RegisterProps {
-  onRegisterSuccess: () => void;
+  onRegisterSuccess: () => Promise<void>;
 }
 
 const Register: React.FC<RegisterProps> = ({ onRegisterSuccess }) => {
@@ -35,10 +35,8 @@ const Register: React.FC<RegisterProps> = ({ onRegisterSuccess }) => {
         confirmPassword,
         profileImagePath: profileImagePath || undefined
       });
-      onRegisterSuccess();
-      setTimeout(() => {
-        navigate('/');
-      }, 500);
+      await onRegisterSuccess();
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
       console.error(err);

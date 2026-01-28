@@ -11,7 +11,6 @@ const rawBaseUrl = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
 const API_BASE_URL = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
 const USE_MOCK_DATA = false; 
 
-console.log("Using API Base URL:", API_BASE_URL);
 
 // Simulate API delay for mocks
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -41,25 +40,18 @@ const mapPost = (post: any): Post => {
     minute: '2-digit',
   });
 
-  // Determine comment count with priority: explicit count > list length
-  let count = 0;
-  if (typeof post.commentCount === 'number') {
-      count = post.commentCount;
-  } else if (typeof post.commentsCount === 'number') {
-      count = post.commentsCount;
-  } else if (post.comments && Array.isArray(post.comments)) {
-      count = post.comments.length;
-  }
+  // Check if author info is nested in a 'user' or 'author' object
+  const authorObj = post.user || post.author || {};
 
   return {
     ...post,
     id: String(post.postId || post.id),
-    authorId: post.userId ? String(post.userId) : (post.authorId ? String(post.authorId) : ''),
-    authorName: post.username || post.authorName || 'Unknown',
-    authorAvatar: post.profileImagePath || post.userAvatar || post.authorAvatar || `https://www.gravatar.com/avatar/${post.username || 'default'}?d=identicon`,
+    authorId: post.userId ? String(post.userId) : (post.authorId ? String(post.authorId) : (authorObj.id ? String(authorObj.id) : '')),
+    authorName: post.username || post.authorName || authorObj.username || 'Unknown',
+    authorAvatar: post.profileImagePath || post.userAvatar || post.authorAvatar || authorObj.profileImagePath || authorObj.avatar || `https://www.gravatar.com/avatar/${post.username || authorObj.username || 'default'}?d=identicon`,
     content: post.text || post.content, // Map 'text' from backend to 'content'
     timestamp: formattedDate,
-    commentCount: count
+    commentCount: 0 // Vi behöver inte längre räkna detta i listan
   };
 };
 
@@ -330,6 +322,25 @@ export const createPost = async (content: string): Promise<Post> => {
   return mapPost(response);
 };
 
+export const updatePost = async (postId: string, content: string): Promise<Post> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const post = MOCK_POSTS.find(p => p.id === postId);
+    if (post) {
+        post.content = content;
+        return { ...post };
+    }
+    throw new Error("Post not found");
+  }
+
+  const response = await apiRequest<any>(`/posts/${postId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ text: content }),
+  });
+
+  return mapPost(response);
+};
+
 export const getPosts = async (page: number, limit: number): Promise<Post[]> => {
   if (USE_MOCK_DATA) {
     await delay(300);
@@ -350,19 +361,7 @@ export const getPosts = async (page: number, limit: number): Promise<Post[]> => 
     rawPosts = response;
   }
 
-  const posts = rawPosts.map(mapPost);
-
-  // Fetch comments for each post to get the count (fallback since backend doesn't provide it)
-  const postsWithCounts = await Promise.all(posts.map(async (post) => {
-    try {
-      const comments = await getComments(post.id);
-      return { ...post, commentCount: comments.length };
-    } catch (err) {
-      return post;
-    }
-  }));
-
-  return postsWithCounts;
+  return rawPosts.map(mapPost);
 };
 
 export const getPost = async (postId: string): Promise<Post | undefined> => {
@@ -417,6 +416,25 @@ export const createComment = async (postId: string, content: string): Promise<Co
   return mapComment(response);
 };
 
+export const updateComment = async (commentId: string, content: string): Promise<Comment> => {
+  if (USE_MOCK_DATA) {
+    await delay(300);
+    const comment = MOCK_COMMENTS.find(c => c.id === commentId);
+    if (comment) {
+        comment.content = content;
+        return { ...comment };
+    }
+    throw new Error("Comment not found");
+  }
+
+  const response = await apiRequest<any>(`/comments/${commentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ text: content }),
+  });
+
+  return mapComment(response);
+};
+
 export const replyToComment = async (commentId: string, content: string): Promise<Comment> => {
   if (USE_MOCK_DATA) {
     await delay(300);
@@ -459,6 +477,32 @@ export const getReplies = async (commentId: string): Promise<Comment[]> => {
   return rawComments.map(c => mapComment({ ...c, parentId: commentId }));
 };
 
+export const searchUsers = async (query: string): Promise<User[]> => {
+  if (USE_MOCK_DATA) {
+    await delay(200);
+    return Object.values(MOCK_USERS).filter((u: any) => 
+        u.username.toLowerCase().includes(query.toLowerCase()) || 
+        (u.displayName && u.displayName.toLowerCase().includes(query.toLowerCase()))
+    ).map(mapUser);
+  }
+  
+  try {
+    const response = await apiRequest<any>(`/users/search?q=${encodeURIComponent(query)}&size=5`);
+    
+    let rawUsers: any[] = [];
+    if (response.content && Array.isArray(response.content)) {
+      rawUsers = response.content;
+    } else if (Array.isArray(response)) {
+      rawUsers = response;
+    }
+    
+    return rawUsers.map(mapUser);
+  } catch (e) {
+    console.error("Search error:", e);
+    return [];
+  }
+};
+
 export const getUser = async (userId: string): Promise<User | null> => {
   if (!userId || userId === 'undefined') return null;
 
@@ -492,19 +536,7 @@ export const getUserPosts = async (userId: string): Promise<Post[]> => {
       rawPosts = response;
     }
     
-    const posts = rawPosts.map(mapPost);
-
-    // Fetch comments for each post to get the count (fallback since backend doesn't provide it)
-    const postsWithCounts = await Promise.all(posts.map(async (post) => {
-      try {
-        const comments = await getComments(post.id);
-        return { ...post, commentCount: comments.length };
-      } catch (err) {
-        return post;
-      }
-    }));
-
-    return postsWithCounts;
+    return rawPosts.map(mapPost);
   } catch (e) {
     console.error(`Failed to fetch posts for user ${userId}`, e);
     return [];
@@ -603,55 +635,30 @@ export const deleteFriendship = async (friendshipId: string): Promise<void> => {
 
 export interface FriendRequest {
     id: string;
-    senderId: string;
-    senderName: string;
-    senderAvatar: string;
-    status: string;
+    friendId: string;
+    friendName: string;
+    friendAvatar: string;
+    isIncoming: boolean;
 }
 
-export const getFriendRequests = async (): Promise<FriendRequest[]> => {
+export const getFriendRequests = async (includeOutgoing: boolean = false): Promise<FriendRequest[]> => {
     if (USE_MOCK_DATA) {
         await delay(200);
         return [];
     }
     try {
         const response = await apiRequest<any[]>('/my/friend-request');
-        console.log("Friend Requests Response:", response); // Debugging
         if (!Array.isArray(response)) return [];
         
-        // Filter out requests that are NOT incoming
-        const incomingRequests = response.filter(req => req.isIncoming === true);
+        const filtered = includeOutgoing ? response : response.filter(req => req.isIncoming);
 
-        // Fetch user details for each request to get username and avatar
-        const requests = await Promise.all(incomingRequests.map(async (req) => {
-            // Since it's incoming, the 'friend' in the DTO is the SENDER
-            const senderId = String(req.friendId);
-            let senderName = req.friendUsername || 'Unknown';
-            let senderAvatar = req.profileImagePath || `https://www.gravatar.com/avatar/${senderName}?d=identicon`;
-
-            // If name is Unknown or we just want to be sure, fetch the user details
-            if (senderId && senderName === 'Unknown') {
-                try {
-                    const user = await getUser(senderId);
-                    if (user) {
-                        senderName = user.username;
-                        senderAvatar = user.avatar;
-                    }
-                } catch (e) {
-                    console.warn(`Could not fetch details for sender ${senderId}`, e);
-                }
-            }
-
-            return {
-                id: String(req.friendshipId),
-                senderId: senderId,
-                senderName: senderName,
-                senderAvatar: senderAvatar,
-                status: 'PENDING' // Assuming /my/friend-request only returns pending ones
-            };
+        return filtered.map(req => ({
+            id: String(req.friendshipId),
+            friendId: String(req.friendId),
+            friendName: req.friendUsername || 'Unknown',
+            friendAvatar: req.profileImagePath || `https://www.gravatar.com/avatar/${req.friendUsername}?d=identicon`,
+            isIncoming: req.isIncoming
         }));
-        
-        return requests;
     } catch (e) {
         console.warn("Failed to fetch friend requests", e);
         return [];
