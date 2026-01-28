@@ -11,6 +11,18 @@ const rawBaseUrl = USE_LOCAL_API ? LOCAL_API_URL : REMOTE_API_URL;
 const API_BASE_URL = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
 const USE_MOCK_DATA = false; 
 
+// Variables to handle concurrent refresh requests (Mutex pattern)
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+const onRefreshed = (token: string) => {
+  refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+};
+
+const addRefreshSubscriber = (cb: (token: string) => void) => {
+  refreshSubscribers.push(cb);
+};
 
 // Simulate API delay for mocks
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -107,6 +119,24 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
     // Handle 401 Unauthorized (Token Expired)
     // We skip this logic for login/logout/refresh endpoints to avoid infinite loops
     if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/logout')) {
+      
+      if (isRefreshing) {
+        return new Promise<T>((resolve, reject) => {
+          addRefreshSubscriber(async (newToken) => {
+            try {
+              if (config.headers) (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newToken}`;
+              const retryResponse = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
+              const text = await retryResponse.text();
+              resolve(text ? JSON.parse(text) : {} as T);
+            } catch (err) {
+              reject(err);
+            }
+          });
+        });
+      }
+
+      isRefreshing = true;
+
       try {
         // Attempt to refresh the token
         const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -122,16 +152,22 @@ async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<T
           
           if (newAccessToken) {
             localStorage.setItem('token', newAccessToken);
+            onRefreshed(newAccessToken);
+            isRefreshing = false;
             
             // Update the header with the new token and retry the original request
             if (config.headers) (config.headers as Record<string, string>)['Authorization'] = `Bearer ${newAccessToken}`;
             response = await fetch(`${API_BASE_URL}${safeEndpoint}`, config);
+          } else {
+            throw new Error("No access token returned from refresh");
           }
         } else {
           // Refresh failed (token invalid or expired), force logout
           throw new Error('Session expired');
         }
       } catch (refreshError) {
+        isRefreshing = false;
+        refreshSubscribers = [];
         // If refresh fails, we must log out to clear state
         await logout(); 
         throw new Error('Session expired. Please login again.');
@@ -607,7 +643,7 @@ export const acceptFriendRequest = async (friendshipId: string): Promise<void> =
     }
     // Matches Backend: PUT /friendships/{friendshipId}/accept
     await apiRequest(`/friendships/${friendshipId}/accept`, {
-        method: 'PUT'
+        method: 'PATCH'
     });
 };
 
@@ -618,7 +654,7 @@ export const rejectFriendRequest = async (friendshipId: string): Promise<void> =
     }
     // Matches Backend: PUT /friendships/{friendshipId}/reject
     await apiRequest(`/friendships/${friendshipId}/reject`, {
-        method: 'PUT'
+        method: 'PATCH'
     });
 };
 
